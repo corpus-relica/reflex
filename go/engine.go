@@ -211,6 +211,21 @@ func (e *Engine) Step(ctx context.Context) (StepResult, error) {
 
 	// -- Handle suspend --
 	if decision.Type == DecisionSuspend {
+		// Apply writes before suspending — batch progress, partial results,
+		// and error metadata should be visible on the blackboard.
+		if len(decision.Writes) > 0 {
+			source := BlackboardSource{
+				WorkflowID: e.currentWorkflowID,
+				NodeID:     e.currentNodeID,
+				StackDepth: len(e.stack),
+			}
+			newEntries := e.currentBlackboard.Append(decision.Writes, source)
+			e.emit(EventBlackboardWrite, Event{
+				Type:       EventBlackboardWrite,
+				Entries:    newEntries,
+				WorkflowID: e.currentWorkflowID,
+			})
+		}
 		e.status = StatusSuspended
 		e.emit(EventEngineSuspend, Event{Type: EventEngineSuspend, Reason: decision.Reason, NodeID: e.currentNodeID})
 		return StepResult{Status: StepSuspended, Reason: decision.Reason}, nil

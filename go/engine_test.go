@@ -1123,3 +1123,119 @@ func TestCurrentBlackboardDuringSubWorkflow(t *testing.T) {
 		}
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Suspend writes — Decision.Writes must be applied on suspend
+// ---------------------------------------------------------------------------
+
+func TestSuspendWritesApplied(t *testing.T) {
+	r := NewRegistry()
+	_ = r.Register(linearWorkflow("wf"))
+
+	callCount := 0
+	agent := agentFunc(func(_ context.Context, dc DecisionContext) (Decision, error) {
+		callCount++
+		if dc.Node.ID == "A" && callCount == 1 {
+			// Suspend with writes — these must land on the blackboard
+			return Decision{
+				Type:   DecisionSuspend,
+				Reason: "batch progress",
+				Writes: []BlackboardWrite{
+					{Key: "progress", Value: 3},
+					{Key: "status", Value: "processing"},
+				},
+			}, nil
+		}
+		if len(dc.ValidEdges) == 0 {
+			return Decision{Type: DecisionComplete}, nil
+		}
+		return Decision{Type: DecisionAdvance, Edge: dc.ValidEdges[0].ID}, nil
+	})
+
+	e := NewEngine(r, agent)
+	_, _ = e.Init("wf")
+
+	// Step 1: suspend at A with writes
+	res, err := e.Step(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Status != StepSuspended {
+		t.Fatalf("expected suspended, got %s", res.Status)
+	}
+
+	// Writes must be visible on the blackboard after suspend
+	bb := e.Blackboard()
+	progress, ok := bb.Get("progress")
+	if !ok {
+		t.Fatal("expected 'progress' key on blackboard after suspend with writes")
+	}
+	if progress != 3 {
+		t.Errorf("expected progress=3, got %v", progress)
+	}
+	status, ok := bb.Get("status")
+	if !ok {
+		t.Fatal("expected 'status' key on blackboard after suspend with writes")
+	}
+	if status != "processing" {
+		t.Errorf("expected status=processing, got %v", status)
+	}
+
+	// Step 2: resume → advance past A. Writes from suspend must persist.
+	res2, err := e.Step(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res2.Status != StepAdvanced {
+		t.Fatalf("expected advanced after resume, got %s", res2.Status)
+	}
+
+	// Writes still visible after advancing
+	bb2 := e.Blackboard()
+	if v, ok := bb2.Get("progress"); !ok || v != 3 {
+		t.Errorf("expected progress=3 after advance, got %v (ok=%v)", v, ok)
+	}
+}
+
+func TestSuspendWritesEmitBlackboardEvent(t *testing.T) {
+	r := NewRegistry()
+	_ = r.Register(linearWorkflow("wf"))
+
+	agent := agentFunc(func(_ context.Context, dc DecisionContext) (Decision, error) {
+		if dc.Node.ID == "A" {
+			return Decision{
+				Type:   DecisionSuspend,
+				Reason: "test",
+				Writes: []BlackboardWrite{{Key: "k", Value: "v"}},
+			}, nil
+		}
+		return Decision{Type: DecisionComplete}, nil
+	})
+
+	e := NewEngine(r, agent)
+
+	var bbEvents []Event
+	e.On(EventBlackboardWrite, func(ev Event) {
+		bbEvents = append(bbEvents, ev)
+	})
+
+	_, _ = e.Init("wf")
+	bbEventsAfterInit := len(bbEvents)
+
+	_, _ = e.Step(context.Background())
+
+	// Should have emitted a blackboard:write event for the suspend writes
+	if len(bbEvents) <= bbEventsAfterInit {
+		t.Fatal("expected blackboard:write event for suspend writes")
+	}
+	lastEvent := bbEvents[len(bbEvents)-1]
+	found := false
+	for _, entry := range lastEvent.Entries {
+		if entry.Key == "k" && entry.Value == "v" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("blackboard:write event should contain the suspend writes")
+	}
+}
