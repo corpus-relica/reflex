@@ -72,3 +72,10 @@ export { EngineError } from './engine.js';
 
 export { loadWorkflow } from './loader.js';
 export type { GuardRegistry, LoadWorkflowOptions } from './loader.js';
+
+// ---------------------------------------------------------------------------
+// Serializer (M7-3: Declarative Workflows)
+// ---------------------------------------------------------------------------
+
+export { serializeWorkflow } from './serializer.js';
+export type { GuardNameMap, SerializeWorkflowOptions } from './serializer.js';
