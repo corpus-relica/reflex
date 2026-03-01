@@ -65,3 +65,10 @@ export type { ValidationErrorCode } from './registry.js';
 
 export { ReflexEngine } from './engine.js';
 export { EngineError } from './engine.js';
+
+// ---------------------------------------------------------------------------
+// Loader (M7-2: Declarative Workflows)
+// ---------------------------------------------------------------------------
+
+export { loadWorkflow } from './loader.js';
+export type { GuardRegistry, LoadWorkflowOptions } from './loader.js';

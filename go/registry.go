@@ -21,7 +21,9 @@ const (
 	ErrNoTerminalNodes    ValidationErrorCode = "NO_TERMINAL_NODES"
 	ErrDuplicateWorkflowID ValidationErrorCode = "DUPLICATE_WORKFLOW_ID"
 	ErrNodeIDMismatch     ValidationErrorCode = "NODE_ID_MISMATCH"
-	ErrEmptyWorkflow      ValidationErrorCode = "EMPTY_WORKFLOW"
+	ErrEmptyWorkflow          ValidationErrorCode = "EMPTY_WORKFLOW"
+	ErrSchemaViolation        ValidationErrorCode = "SCHEMA_VIOLATION"
+	ErrUnknownGuardReference  ValidationErrorCode = "UNKNOWN_GUARD_REFERENCE"
 )
 
 // ValidationError is returned when a workflow fails structural validation.

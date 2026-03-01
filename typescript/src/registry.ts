@@ -14,7 +14,9 @@ export type ValidationErrorCode =
   | 'NO_TERMINAL_NODES'
   | 'DUPLICATE_WORKFLOW_ID'
   | 'NODE_ID_MISMATCH'
-  | 'EMPTY_WORKFLOW';
+  | 'EMPTY_WORKFLOW'
+  | 'SCHEMA_VIOLATION'
+  | 'UNKNOWN_GUARD_REFERENCE';
 
 export class WorkflowValidationError extends Error {
   public readonly code: ValidationErrorCode;
