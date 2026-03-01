@@ -131,7 +131,7 @@ Features demonstrated: sub-workflow invocation with ReturnMap, scoped blackboard
 
 ## Streaming Persistence
 
-Use `RootBlackboard()` with cursors for efficient incremental persistence.
+Use `CurrentBlackboard()` with cursors for efficient incremental persistence.
 Only new entries since the last read are returned — no duplicates, no re-scanning.
 
 ```go
@@ -139,13 +139,13 @@ engine := reflex.CreateEngine(registry, agent)
 engine.Init("my-workflow")
 
 // Start cursor at position 0
-cur := engine.RootBlackboard().Cursor()
+cur := engine.CurrentBlackboard().Cursor()
 
 for {
     result, _ := engine.Step(ctx)
 
     // Read only entries added since last step
-    entries, next := engine.RootBlackboard().EntriesFrom(cur)
+    entries, next := engine.CurrentBlackboard().EntriesFrom(cur)
     for _, e := range entries {
         // Append to NDJSON log, database, etc.
         log.Printf("%s = %v (from %s)\n", e.Key, e.Value, e.Source.NodeID)
@@ -158,7 +158,7 @@ for {
 }
 ```
 
-**`Blackboard()` vs `RootBlackboard()`**: `Blackboard()` returns a `BlackboardReader` that walks the full scope chain (local → parent → grandparent). `RootBlackboard()` returns the current workflow's `*ScopedBlackboard` for direct cursor access. Use `Blackboard()` in agents for scoped reads; use `RootBlackboard()` in persistence layers for incremental writes.
+**`Blackboard()` vs `CurrentBlackboard()`**: `Blackboard()` returns a `BlackboardReader` that walks the full scope chain (local → parent → grandparent). `CurrentBlackboard()` returns a `CursorReader` for the current workflow's blackboard. Use `Blackboard()` in agents for scoped reads; use `CurrentBlackboard()` in persistence layers for incremental writes.
 
 ## Relationship to TypeScript Implementation
 
