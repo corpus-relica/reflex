@@ -3,10 +3,10 @@
 
 import Ajv from 'ajv';
 import type {
-  BlackboardReader,
   BuiltinGuard,
   Edge,
   Guard,
+  GuardRegistry,
   InvocationSpec,
   Node,
   NodeInput,
@@ -21,11 +21,8 @@ import { workflowSchema } from './workflow-schema.js';
 // Public types
 // ---------------------------------------------------------------------------
 
-/** Maps guard names (from JSON) to evaluate functions. */
-export type GuardRegistry = Record<
-  string,
-  (blackboard: BlackboardReader) => boolean
->;
+// Re-export GuardRegistry from types.ts for backward compatibility
+export type { GuardRegistry } from './types.js';
 
 /** Options for loadWorkflow. */
 export interface LoadWorkflowOptions {

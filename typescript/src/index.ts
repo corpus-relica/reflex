@@ -56,6 +56,9 @@ export type {
   EventHandler,
   InitOptions,
   EngineSnapshot,
+  GuardRegistry,
+  RestoreOptions,
+  PersistenceAdapter,
 } from './types.js';
 
 // ---------------------------------------------------------------------------
@@ -79,7 +82,7 @@ export { EngineError } from './engine.js';
 // ---------------------------------------------------------------------------
 
 export { loadWorkflow } from './loader.js';
-export type { GuardRegistry, LoadWorkflowOptions } from './loader.js';
+export type { LoadWorkflowOptions } from './loader.js';
 
 // ---------------------------------------------------------------------------
 // Serializer (M7-3: Declarative Workflows)
@@ -87,3 +90,9 @@ export type { GuardRegistry, LoadWorkflowOptions } from './loader.js';
 
 export { serializeWorkflow } from './serializer.js';
 export type { GuardNameMap, SerializeWorkflowOptions } from './serializer.js';
+
+// ---------------------------------------------------------------------------
+// Restore (M9-2: Persistence)
+// ---------------------------------------------------------------------------
+
+export { restoreEngine } from './restore.js';

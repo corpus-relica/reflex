@@ -212,6 +212,16 @@ export type RunResult =
 export type EventHandler = (payload?: unknown) => void;
 
 // ---------------------------------------------------------------------------
+// 4.2 Guard Registry
+// ---------------------------------------------------------------------------
+
+/** Maps guard names (from JSON) to evaluate functions. */
+export type GuardRegistry = Record<
+  string,
+  (blackboard: BlackboardReader) => boolean
+>;
+
+// ---------------------------------------------------------------------------
 // 4.3 Persistence — Engine Snapshot (M9-1)
 // ---------------------------------------------------------------------------
 
@@ -257,4 +267,30 @@ export interface EngineSnapshot {
    * validate registry completeness — not the full definitions.
    */
   workflowIds: string[];
+}
+
+// ---------------------------------------------------------------------------
+// 4.3 Persistence — Restore Options (M9-2)
+// ---------------------------------------------------------------------------
+
+/** Options for restoreEngine(). */
+export interface RestoreOptions {
+  /** Guard registry for validating custom guard availability at restore time. */
+  guards?: GuardRegistry;
+}
+
+// ---------------------------------------------------------------------------
+// 4.3 Persistence — Persistence Adapter (M9-2)
+// ---------------------------------------------------------------------------
+
+/**
+ * Consumer-provided storage adapter for saving and loading engine snapshots.
+ *
+ * Reflex provides no built-in implementations — consumers supply their own
+ * (file system, database, cloud storage, etc.). The adapter is optional;
+ * snapshot() and restoreEngine() work standalone for manual save/load.
+ */
+export interface PersistenceAdapter {
+  save(sessionId: string, snapshot: EngineSnapshot): Promise<void>;
+  load(sessionId: string): Promise<EngineSnapshot | null>;
 }

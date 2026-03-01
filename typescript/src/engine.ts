@@ -73,6 +73,32 @@ export class ReflexEngine {
   }
 
   // -------------------------------------------------------------------------
+  // Restore from snapshot (M9-2) — package-internal factory
+  // -------------------------------------------------------------------------
+
+  /** @internal — Used by restoreEngine(). Not part of the public API. */
+  static _fromSnapshot(
+    snapshot: EngineSnapshot,
+    registry: WorkflowRegistry,
+    agent: DecisionAgent,
+  ): ReflexEngine {
+    const engine = new ReflexEngine(registry, agent);
+    engine._sessionId = snapshot.sessionId;
+    engine._status = snapshot.status;
+    engine._currentWorkflowId = snapshot.currentWorkflowId;
+    engine._currentNodeId = snapshot.currentNodeId;
+    engine._currentBlackboard = new ScopedBlackboard(
+      snapshot.currentBlackboard.map((e) => ({ ...e })),
+    );
+    engine._stack = snapshot.stack.map((frame) => ({
+      ...frame,
+      blackboard: frame.blackboard.map((e) => ({ ...e })),
+    }));
+    engine._skipInvocation = snapshot.skipInvocation;
+    return engine;
+  }
+
+  // -------------------------------------------------------------------------
   // Lifecycle
   // -------------------------------------------------------------------------
 
