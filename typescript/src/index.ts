@@ -55,6 +55,7 @@ export type {
   RunResult,
   EventHandler,
   InitOptions,
+  EngineSnapshot,
 } from './types.js';
 
 // ---------------------------------------------------------------------------

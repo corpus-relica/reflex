@@ -23,6 +23,7 @@ import {
   EngineEvent,
   EventHandler,
   EngineStatus,
+  EngineSnapshot,
   InitOptions,
 } from './types.js';
 import { WorkflowRegistry } from './registry.js';
@@ -449,6 +450,41 @@ export class ReflexEngine {
     }
 
     return result.edges;
+  }
+
+  // -------------------------------------------------------------------------
+  // Persistence — Snapshot (M9-1)
+  // -------------------------------------------------------------------------
+
+  snapshot(): EngineSnapshot {
+    if (
+      this._sessionId === null ||
+      this._currentWorkflowId === null ||
+      this._currentNodeId === null ||
+      this._currentBlackboard === null
+    ) {
+      throw new EngineError(
+        'snapshot() called before init() — no session state to capture',
+      );
+    }
+
+    return {
+      version: '1',
+      createdAt: new Date().toISOString(),
+      sessionId: this._sessionId,
+      status: this._status,
+      currentWorkflowId: this._currentWorkflowId,
+      currentNodeId: this._currentNodeId,
+      currentBlackboard: [
+        ...this._currentBlackboard.getEntries(),
+      ] as BlackboardEntry[],
+      stack: this._stack.map((frame) => ({
+        ...frame,
+        blackboard: [...frame.blackboard],
+      })),
+      skipInvocation: this._skipInvocation,
+      workflowIds: this._registry.list(),
+    };
   }
 
   // -------------------------------------------------------------------------

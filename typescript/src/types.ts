@@ -210,3 +210,51 @@ export type RunResult =
   | { status: 'error'; error: unknown };
 
 export type EventHandler = (payload?: unknown) => void;
+
+// ---------------------------------------------------------------------------
+// 4.3 Persistence — Engine Snapshot (M9-1)
+// ---------------------------------------------------------------------------
+
+/**
+ * JSON-serializable representation of complete engine state at a point in time.
+ *
+ * Workflow definitions, decision agents, and event handlers are NOT included —
+ * they must be provided at restore time. This captures only runtime session
+ * state: current position, blackboard contents, call stack, and engine status.
+ *
+ * Custom guards are represented by name (as stored in workflow JSON via M7).
+ * Restoration requires a GuardRegistry to resolve them back to Guard
+ * implementations.
+ *
+ * NodeSpec values must be JSON-serializable by convention — no functions, no
+ * class instances. This constraint is documented, not enforced at runtime.
+ */
+export interface EngineSnapshot {
+  /** Snapshot format version for forward compatibility. Currently "1". */
+  version: string;
+  /** ISO 8601 timestamp of when the snapshot was taken. */
+  createdAt: string;
+  /** Engine session identifier. */
+  sessionId: string;
+  /** Engine lifecycle state at snapshot time. */
+  status: EngineStatus;
+  /** ID of the currently executing workflow. */
+  currentWorkflowId: string;
+  /** ID of the current node within the current workflow. */
+  currentNodeId: string;
+  /** Blackboard entries for the innermost (current) workflow scope. */
+  currentBlackboard: BlackboardEntry[];
+  /** Call stack (index 0 = most-recent parent frame). */
+  stack: StackFrame[];
+  /**
+   * Internal flag for correct resume behavior after a sub-workflow pop.
+   * True when positioned at a parent's invoking node after the sub-workflow
+   * has completed — prevents re-triggering the invocation on next step().
+   */
+  skipInvocation: boolean;
+  /**
+   * All workflow IDs registered at snapshot time. Used at restore time to
+   * validate registry completeness — not the full definitions.
+   */
+  workflowIds: string[];
+}
