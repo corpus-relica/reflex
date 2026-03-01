@@ -588,4 +588,169 @@ describe('restoreEngine()', () => {
     expect(edges[0].id).toBe('e-bc');
     expect(edges[0].to).toBe('C');
   });
+
+  // -----------------------------------------------------------------------
+  // Custom guard round-trip (M9-3)
+  // -----------------------------------------------------------------------
+
+  it('custom guard controls transitions after restore', async () => {
+    // Workflow: A → B --(guard: has 'unlocked')--> C → END
+    //                  \--(no guard)--------------> END
+    const guarded: Workflow = {
+      id: 'guarded',
+      entry: 'A',
+      nodes: {
+        A: node('A'),
+        B: node('B'),
+        C: node('C'),
+        END: node('END'),
+      },
+      edges: [
+        { id: 'e-ab', from: 'A', to: 'B', event: 'NEXT' },
+        {
+          id: 'e-bc-guarded',
+          from: 'B',
+          to: 'C',
+          event: 'NEXT',
+          guard: {
+            type: 'custom',
+            evaluate: (bb) => bb.has('unlocked'),
+          } as CustomGuard,
+        },
+        {
+          id: 'e-be',
+          from: 'B',
+          to: 'END',
+          event: 'FALLBACK',
+        },
+        { id: 'e-ce', from: 'C', to: 'END', event: 'NEXT' },
+      ],
+    };
+
+    registry.register(guarded);
+    const agent = autoAgent();
+    const engine = new ReflexEngine(registry, agent);
+
+    await engine.init('guarded');
+    await engine.step(); // A → B
+
+    const snap = engine.snapshot();
+
+    const registry2 = new WorkflowRegistry();
+    registry2.register(guarded);
+    const restored = restoreEngine(snap, registry2, agent);
+
+    // Guard should block e-bc-guarded (no 'unlocked' key) — only e-be valid
+    const edges = restored.validEdges();
+    expect(edges).toHaveLength(1);
+    expect(edges[0].id).toBe('e-be');
+
+    // Now init with a write during A→B that satisfies the guard, snapshot at B,
+    // restore, and confirm the guarded edge is now valid
+    const writingAgent2 = writingAgent('unlocked', true);
+    const engine2 = new ReflexEngine(registry2, writingAgent2);
+    await engine2.init('guarded');
+    await engine2.step(); // A → B, writes unlocked=true
+
+    const snap2 = engine2.snapshot();
+    const restored2 = restoreEngine(snap2, registry2, autoAgent());
+
+    const edges2 = restored2.validEdges();
+    const edgeIds = edges2.map((e) => e.id);
+    expect(edgeIds).toContain('e-bc-guarded');
+  });
+
+  // -----------------------------------------------------------------------
+  // Error: unresolved custom guard on restore (M9-3)
+  // -----------------------------------------------------------------------
+
+  it('throws EngineError when custom guard has no evaluate function on restore', async () => {
+    // Build a workflow where the custom guard lacks an evaluate function.
+    // We cast to bypass TypeScript's type check — simulates a deserialized
+    // workflow where guard functions haven't been rehydrated.
+    const unresolvedGuard: Workflow = {
+      id: 'unresolved',
+      entry: 'A',
+      nodes: { A: node('A'), B: node('B') },
+      edges: [
+        {
+          id: 'e-ab',
+          from: 'A',
+          to: 'B',
+          event: 'NEXT',
+          guard: { type: 'custom' } as CustomGuard,
+        },
+      ],
+    };
+
+    registry.register(unresolvedGuard);
+    const agent = autoAgent();
+    const engine = new ReflexEngine(registry, agent);
+
+    await engine.init('unresolved');
+    const snap = engine.snapshot();
+
+    const registry2 = new WorkflowRegistry();
+    registry2.register(unresolvedGuard);
+
+    // Without guards option — no validation, no error
+    expect(() => restoreEngine(snap, registry2, agent)).not.toThrow();
+
+    // With guards option — triggers validation, detects missing evaluate
+    expect(() =>
+      restoreEngine(snap, registry2, agent, { guards: {} }),
+    ).toThrow(EngineError);
+    expect(() =>
+      restoreEngine(snap, registry2, agent, { guards: {} }),
+    ).toThrow(/unresolved custom guard/);
+  });
+
+  // -----------------------------------------------------------------------
+  // Multi-scope blackboard integrity (M9-3)
+  // -----------------------------------------------------------------------
+
+  it('parent blackboard entries are visible through scoped reader after restore', async () => {
+    registry.register(parentWorkflow());
+    registry.register(childWorkflow());
+
+    // Agent writes parentData before invoking child
+    const agent = makeAgent(async (ctx) => {
+      if (ctx.node.id === 'SETUP') {
+        return {
+          type: 'advance',
+          edge: ctx.validEdges[0].id,
+          writes: [{ key: 'parentData', value: 100 }],
+        };
+      }
+      if (ctx.validEdges.length > 0) {
+        return { type: 'advance', edge: ctx.validEdges[0].id };
+      }
+      return { type: 'complete', writes: [{ key: 'output', value: 'done' }] };
+    });
+
+    const engine = new ReflexEngine(registry, agent);
+    await engine.init('parent');
+    await engine.step(); // SETUP → INVOKE_CHILD (writes parentData=100)
+    await engine.step(); // invocation: push parent, enter child at CHILD_A
+
+    expect(engine.currentWorkflow()!.id).toBe('child');
+    expect(engine.stack()).toHaveLength(1);
+
+    const snap = engine.snapshot();
+
+    const registry2 = new WorkflowRegistry();
+    registry2.register(parentWorkflow());
+    registry2.register(childWorkflow());
+    const restored = restoreEngine(snap, registry2, agent);
+
+    // Scoped reader should see parent's blackboard entry through the scope chain
+    const bb = restored.blackboard();
+    expect(bb.get('parentData')).toBe(100);
+    expect(bb.has('parentData')).toBe(true);
+
+    // Local scope (child's blackboard) should NOT contain the parent entry
+    const localEntries = bb.local();
+    const localKeys = localEntries.map((e) => e.key);
+    expect(localKeys).not.toContain('parentData');
+  });
 });
