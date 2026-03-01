@@ -264,6 +264,168 @@ func TestBlackboardWithInitialEntries(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// Cursor API
+// ---------------------------------------------------------------------------
+
+func TestCursorStartsAtZero(t *testing.T) {
+	bb := NewBlackboard()
+	if c := bb.Cursor(); c != 0 {
+		t.Errorf("expected cursor 0, got %d", c)
+	}
+}
+
+func TestCursorAdvancesWithAppends(t *testing.T) {
+	bb := NewBlackboard()
+	source := BlackboardSource{WorkflowID: "wf", NodeID: "n", StackDepth: 0}
+	bb.Append([]BlackboardWrite{{Key: "a", Value: 1}, {Key: "b", Value: 2}, {Key: "c", Value: 3}}, source)
+	if c := bb.Cursor(); c != 3 {
+		t.Errorf("expected cursor 3, got %d", c)
+	}
+}
+
+func TestEntriesFromZeroReturnsAll(t *testing.T) {
+	bb := NewBlackboard()
+	source := BlackboardSource{WorkflowID: "wf", NodeID: "n", StackDepth: 0}
+	for i := 0; i < 5; i++ {
+		bb.Append([]BlackboardWrite{{Key: "k", Value: i}}, source)
+	}
+	entries, next := bb.EntriesFrom(0)
+	if len(entries) != 5 {
+		t.Errorf("expected 5 entries, got %d", len(entries))
+	}
+	if next != 5 {
+		t.Errorf("expected next cursor 5, got %d", next)
+	}
+}
+
+func TestEntriesFromCursorReturnsDelta(t *testing.T) {
+	bb := NewBlackboard()
+	source := BlackboardSource{WorkflowID: "wf", NodeID: "n", StackDepth: 0}
+	bb.Append([]BlackboardWrite{{Key: "a", Value: 1}, {Key: "b", Value: 2}, {Key: "c", Value: 3}}, source)
+	cur := bb.Cursor()
+	bb.Append([]BlackboardWrite{{Key: "d", Value: 4}, {Key: "e", Value: 5}}, source)
+
+	entries, next := bb.EntriesFrom(cur)
+	if len(entries) != 2 {
+		t.Errorf("expected 2 delta entries, got %d", len(entries))
+	}
+	if next != 5 {
+		t.Errorf("expected next cursor 5, got %d", next)
+	}
+	if entries[0].Key != "d" || entries[1].Key != "e" {
+		t.Error("delta entries have wrong keys")
+	}
+}
+
+func TestEntriesFromPastEnd(t *testing.T) {
+	bb := NewBlackboard()
+	source := BlackboardSource{WorkflowID: "wf", NodeID: "n", StackDepth: 0}
+	bb.Append([]BlackboardWrite{{Key: "a", Value: 1}}, source)
+
+	entries, next := bb.EntriesFrom(Cursor(999))
+	if entries != nil {
+		t.Errorf("expected nil entries, got %d", len(entries))
+	}
+	if next != 1 {
+		t.Errorf("expected next cursor 1, got %d", next)
+	}
+}
+
+func TestEntriesFromNegative(t *testing.T) {
+	bb := NewBlackboard()
+	source := BlackboardSource{WorkflowID: "wf", NodeID: "n", StackDepth: 0}
+	bb.Append([]BlackboardWrite{{Key: "a", Value: 1}, {Key: "b", Value: 2}}, source)
+
+	entries, next := bb.EntriesFrom(Cursor(-1))
+	if len(entries) != 2 {
+		t.Errorf("expected 2 entries, got %d", len(entries))
+	}
+	if next != 2 {
+		t.Errorf("expected next cursor 2, got %d", next)
+	}
+}
+
+func TestCursorConcurrentSafety(t *testing.T) {
+	bb := NewBlackboard()
+	source := BlackboardSource{WorkflowID: "wf", NodeID: "n", StackDepth: 0}
+
+	var wg sync.WaitGroup
+	// Writer goroutine
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 100; i++ {
+			bb.Append([]BlackboardWrite{{Key: "k", Value: i}}, source)
+		}
+	}()
+	// Reader goroutine using cursor
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		var cur Cursor
+		total := 0
+		for total < 100 {
+			entries, next := bb.EntriesFrom(cur)
+			total += len(entries)
+			cur = next
+		}
+	}()
+	wg.Wait()
+	if bb.Cursor() != 100 {
+		t.Errorf("expected cursor 100, got %d", bb.Cursor())
+	}
+}
+
+func TestCursorSeededBlackboard(t *testing.T) {
+	seed := []BlackboardEntry{bbEntry("s1", "v1"), bbEntry("s2", "v2")}
+	bb := NewBlackboard(seed...)
+
+	if c := bb.Cursor(); c != 2 {
+		t.Errorf("expected cursor 2 after seed, got %d", c)
+	}
+	entries, next := bb.EntriesFrom(0)
+	if len(entries) != 2 {
+		t.Errorf("expected 2 seed entries, got %d", len(entries))
+	}
+	if next != 2 {
+		t.Errorf("expected next cursor 2, got %d", next)
+	}
+}
+
+func TestCursorMultipleIncrementalReads(t *testing.T) {
+	bb := NewBlackboard()
+	source := BlackboardSource{WorkflowID: "wf", NodeID: "n", StackDepth: 0}
+
+	var allRead []BlackboardEntry
+	cur := bb.Cursor()
+
+	// Batch 1
+	bb.Append([]BlackboardWrite{{Key: "a", Value: 1}, {Key: "b", Value: 2}}, source)
+	entries, cur := bb.EntriesFrom(cur)
+	allRead = append(allRead, entries...)
+
+	// Batch 2
+	bb.Append([]BlackboardWrite{{Key: "c", Value: 3}}, source)
+	entries, cur = bb.EntriesFrom(cur)
+	allRead = append(allRead, entries...)
+
+	// Batch 3
+	bb.Append([]BlackboardWrite{{Key: "d", Value: 4}, {Key: "e", Value: 5}}, source)
+	entries, _ = bb.EntriesFrom(cur)
+	allRead = append(allRead, entries...)
+
+	if len(allRead) != 5 {
+		t.Errorf("expected 5 total entries (no duplicates), got %d", len(allRead))
+	}
+	expected := []string{"a", "b", "c", "d", "e"}
+	for i, e := range allRead {
+		if e.Key != expected[i] {
+			t.Errorf("entry %d: expected key %s, got %s", i, expected[i], e.Key)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Concurrent safety
 // ---------------------------------------------------------------------------
 

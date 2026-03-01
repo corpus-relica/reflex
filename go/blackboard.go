@@ -141,6 +141,55 @@ func (bb *ScopedBlackboard) Append(writes []BlackboardWrite, source BlackboardSo
 	return newEntries
 }
 
+// CursorReader provides read-only access to a blackboard's incremental
+// entry log. Use Cursor() to snapshot the current position, then
+// EntriesFrom() after subsequent steps to retrieve only new entries.
+// This is the public interface returned by Engine.CurrentBlackboard().
+type CursorReader interface {
+	// Cursor returns the current end position of the entry log.
+	Cursor() Cursor
+	// EntriesFrom returns entries appended at or after position c,
+	// plus the cursor for the new end position.
+	EntriesFrom(c Cursor) ([]BlackboardEntry, Cursor)
+}
+
+// Cursor represents a position in the blackboard entry log.
+// Use with EntriesFrom to read only entries appended after this position.
+// Cursor values are only valid for the ScopedBlackboard that produced them.
+type Cursor int
+
+// Cursor returns the current end position of this blackboard.
+// Pass the returned cursor to EntriesFrom after subsequent Append calls
+// to retrieve only the new entries.
+func (bb *ScopedBlackboard) Cursor() Cursor {
+	bb.mu.RLock()
+	defer bb.mu.RUnlock()
+	return Cursor(len(bb.entries))
+}
+
+// EntriesFrom returns entries appended at or after position c,
+// plus the cursor for the new end position. This enables efficient
+// incremental reads for streaming persistence (e.g., NDJSON logging).
+//
+// If c is negative, it is treated as 0 (returns all entries).
+// If c is at or past the end, returns nil and the current end position.
+func (bb *ScopedBlackboard) EntriesFrom(c Cursor) ([]BlackboardEntry, Cursor) {
+	bb.mu.RLock()
+	defer bb.mu.RUnlock()
+
+	end := Cursor(len(bb.entries))
+	if c < 0 {
+		c = 0
+	}
+	if c >= end {
+		return nil, end
+	}
+
+	out := make([]BlackboardEntry, end-c)
+	copy(out, bb.entries[c:end])
+	return out, end
+}
+
 // Entries returns a copy of this scope's entries.
 func (bb *ScopedBlackboard) Entries() []BlackboardEntry {
 	bb.mu.RLock()

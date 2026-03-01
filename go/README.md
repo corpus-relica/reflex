@@ -129,6 +129,37 @@ Go port of [reflex-dungeon](https://github.com/corpus-relica/reflex-dungeon) —
 
 Features demonstrated: sub-workflow invocation with ReturnMap, scoped blackboard reads (combat reads parent inventory), custom compound guards (boss door needs both seals), multiple terminal nodes, suspension/resumption.
 
+## Streaming Persistence
+
+Use `RootBlackboard()` with cursors for efficient incremental persistence.
+Only new entries since the last read are returned — no duplicates, no re-scanning.
+
+```go
+engine := reflex.CreateEngine(registry, agent)
+engine.Init("my-workflow")
+
+// Start cursor at position 0
+cur := engine.RootBlackboard().Cursor()
+
+for {
+    result, _ := engine.Step(ctx)
+
+    // Read only entries added since last step
+    entries, next := engine.RootBlackboard().EntriesFrom(cur)
+    for _, e := range entries {
+        // Append to NDJSON log, database, etc.
+        log.Printf("%s = %v (from %s)\n", e.Key, e.Value, e.Source.NodeID)
+    }
+    cur = next
+
+    if result.Status == reflex.StepCompleted {
+        break
+    }
+}
+```
+
+**`Blackboard()` vs `RootBlackboard()`**: `Blackboard()` returns a `BlackboardReader` that walks the full scope chain (local → parent → grandparent). `RootBlackboard()` returns the current workflow's `*ScopedBlackboard` for direct cursor access. Use `Blackboard()` in agents for scoped reads; use `RootBlackboard()` in persistence layers for incremental writes.
+
 ## Relationship to TypeScript Implementation
 
 Both the TypeScript (`src/`) and Go (`go/`) implementations conform to the same

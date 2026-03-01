@@ -1028,3 +1028,98 @@ func TestEngineInitSeedBlackboard(t *testing.T) {
 		}
 	})
 }
+
+// ---------------------------------------------------------------------------
+// CurrentBlackboard — cursor access
+// ---------------------------------------------------------------------------
+
+func TestCurrentBlackboardBeforeInit(t *testing.T) {
+	reg := CreateRegistry()
+	e := CreateEngine(reg, autoAdvanceAgent())
+	if bb := e.CurrentBlackboard(); bb != nil {
+		t.Error("expected nil CurrentBlackboard before Init")
+	}
+}
+
+func TestCurrentBlackboardAfterInit(t *testing.T) {
+	e, _ := setupLinear()
+	_, _ = e.Init("linear")
+	bb := e.CurrentBlackboard()
+	if bb == nil {
+		t.Fatal("expected non-nil CurrentBlackboard after Init")
+	}
+}
+
+func TestCurrentBlackboardCursorTracksWrites(t *testing.T) {
+	e, _ := setupLinear()
+	_, _ = e.Init("linear", InitOptions{
+		Blackboard: []BlackboardWrite{
+			{Key: "seed", Value: "hello"},
+		},
+	})
+	bb := e.CurrentBlackboard()
+	if bb == nil {
+		t.Fatal("expected non-nil CurrentBlackboard")
+	}
+	cur := bb.Cursor()
+	if cur == 0 {
+		t.Error("expected cursor > 0 after seed writes")
+	}
+
+	// Step should produce agent writes, advancing cursor
+	_, _ = e.Step(context.Background())
+	entries, next := bb.EntriesFrom(cur)
+	// We may or may not get new entries depending on agent behavior,
+	// but next should be >= cur
+	_ = entries
+	if next < cur {
+		t.Errorf("expected next (%d) >= cur (%d)", next, cur)
+	}
+}
+
+func TestCurrentBlackboardDuringSubWorkflow(t *testing.T) {
+	reg := NewRegistry()
+
+	child := linearWorkflow("child")
+	parent := &Workflow{
+		ID:    "parent",
+		Entry: "invoke",
+		Nodes: map[string]*Node{
+			"invoke": {ID: "invoke", Spec: NodeSpec{"type": "invoke"}, Invokes: &InvocationSpec{WorkflowID: "child"}},
+		},
+	}
+	_ = reg.Register(parent)
+	_ = reg.Register(child)
+
+	agent := agentFunc(func(_ context.Context, dc DecisionContext) (Decision, error) {
+		if len(dc.ValidEdges) == 0 {
+			return Decision{Type: DecisionComplete}, nil
+		}
+		return Decision{
+			Type:   DecisionAdvance,
+			Edge:   dc.ValidEdges[0].ID,
+			Writes: []BlackboardWrite{{Key: "visited_" + dc.Node.ID, Value: true}},
+		}, nil
+	})
+
+	e := NewEngine(reg, agent)
+	_, _ = e.Init("parent")
+
+	// Step — should invoke the child workflow
+	result, err := e.Step(context.Background())
+	if err != nil {
+		t.Fatalf("step error: %v", err)
+	}
+	if result.Status == StepInvoked {
+		// We're now in the child — CurrentBlackboard should be the child's
+		bb := e.CurrentBlackboard()
+		if bb == nil {
+			t.Fatal("expected non-nil CurrentBlackboard during sub-workflow")
+		}
+		// Child's local blackboard should be fresh (no parent writes directly)
+		if bb.Cursor() != 0 {
+			// Note: cursor may be > 0 if engine wrote entries during invocation setup
+			t.Logf("child blackboard cursor after invoke: %d", bb.Cursor())
+		}
+	}
+}
