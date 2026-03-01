@@ -34,6 +34,14 @@ export const workflowSchema = {
         description: { type: 'string' },
         spec: { $ref: '#/definitions/NodeSpec' },
         invokes: { $ref: '#/definitions/InvocationSpec' },
+        inputs: {
+          type: 'array',
+          items: { $ref: '#/definitions/NodeInput' },
+        },
+        outputs: {
+          type: 'array',
+          items: { $ref: '#/definitions/NodeOutput' },
+        },
       },
       required: ['id', 'spec'],
       additionalProperties: false,
@@ -42,6 +50,28 @@ export const workflowSchema = {
     NodeSpec: {
       type: 'object',
       additionalProperties: true,
+    },
+
+    NodeInput: {
+      type: 'object',
+      properties: {
+        key: { type: 'string' },
+        required: { type: 'boolean' },
+        description: { type: 'string' },
+      },
+      required: ['key', 'required'],
+      additionalProperties: false,
+    },
+
+    NodeOutput: {
+      type: 'object',
+      properties: {
+        key: { type: 'string' },
+        guaranteed: { type: 'boolean' },
+        description: { type: 'string' },
+      },
+      required: ['key', 'guaranteed'],
+      additionalProperties: false,
     },
 
     InvocationSpec: {

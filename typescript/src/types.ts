@@ -28,6 +28,22 @@ export interface InvocationSpec {
 }
 
 // ---------------------------------------------------------------------------
+// 2.13 Node Contracts (declarations only — not enforced at runtime)
+// ---------------------------------------------------------------------------
+
+export interface NodeInput {
+  key: string;
+  required: boolean;
+  description?: string;
+}
+
+export interface NodeOutput {
+  key: string;
+  guaranteed: boolean;
+  description?: string;
+}
+
+// ---------------------------------------------------------------------------
 // 2.2 Node
 // ---------------------------------------------------------------------------
 
@@ -36,6 +52,8 @@ export interface Node {
   description?: string;
   spec: NodeSpec;
   invokes?: InvocationSpec;
+  inputs?: NodeInput[];
+  outputs?: NodeOutput[];
 }
 
 // ---------------------------------------------------------------------------

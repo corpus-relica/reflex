@@ -54,6 +54,16 @@
         },
         "invokes": {
           "$ref": "#/definitions/InvocationSpec"
+        },
+        "inputs": {
+          "type": "array",
+          "description": "Declared blackboard keys this node reads (static analysis only).",
+          "items": { "$ref": "#/definitions/NodeInput" }
+        },
+        "outputs": {
+          "type": "array",
+          "description": "Declared blackboard keys this node writes (static analysis only).",
+          "items": { "$ref": "#/definitions/NodeOutput" }
         }
       },
       "required": ["id", "spec"],
@@ -64,6 +74,48 @@
       "type": "object",
       "description": "Domain-specific data — opaque to Reflex. The decision agent interprets it, not the engine.",
       "additionalProperties": true
+    },
+
+    "NodeInput": {
+      "type": "object",
+      "description": "Declares a blackboard key that a node expects to read (static analysis only).",
+      "properties": {
+        "key": {
+          "type": "string",
+          "description": "Blackboard key this node reads."
+        },
+        "required": {
+          "type": "boolean",
+          "description": "Whether the key must exist on the blackboard when this node executes."
+        },
+        "description": {
+          "type": "string",
+          "description": "Optional human-readable description of this input."
+        }
+      },
+      "required": ["key", "required"],
+      "additionalProperties": false
+    },
+
+    "NodeOutput": {
+      "type": "object",
+      "description": "Declares a blackboard key that a node may write (static analysis only).",
+      "properties": {
+        "key": {
+          "type": "string",
+          "description": "Blackboard key this node writes."
+        },
+        "guaranteed": {
+          "type": "boolean",
+          "description": "Whether this key is always written (true) or conditionally written (false)."
+        },
+        "description": {
+          "type": "string",
+          "description": "Optional human-readable description of this output."
+        }
+      },
+      "required": ["key", "guaranteed"],
+      "additionalProperties": false
     },
 
     "InvocationSpec": {

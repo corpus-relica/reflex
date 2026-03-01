@@ -193,6 +193,71 @@ describe('serializeWorkflow', () => {
       const parsed = JSON.parse(json);
       expect(parsed.metadata).toBeUndefined();
     });
+
+    it('serializes inputs and outputs when present', () => {
+      const wf: Workflow = {
+        id: 'test',
+        entry: 'A',
+        nodes: {
+          A: {
+            id: 'A',
+            spec: {},
+            inputs: [
+              { key: 'userName', required: true, description: 'The user name' },
+            ],
+            outputs: [
+              { key: 'greeting', guaranteed: true },
+            ],
+          },
+        },
+        edges: [],
+      };
+      const parsed = JSON.parse(serializeWorkflow(wf));
+      expect(parsed.nodes['A'].inputs).toEqual([
+        { key: 'userName', required: true, description: 'The user name' },
+      ]);
+      expect(parsed.nodes['A'].outputs).toEqual([
+        { key: 'greeting', guaranteed: true },
+      ]);
+    });
+
+    it('omits inputs and outputs when not present', () => {
+      const wf: Workflow = {
+        id: 'test',
+        entry: 'A',
+        nodes: { A: { id: 'A', spec: {} } },
+        edges: [],
+      };
+      const parsed = JSON.parse(serializeWorkflow(wf));
+      expect(parsed.nodes['A'].inputs).toBeUndefined();
+      expect(parsed.nodes['A'].outputs).toBeUndefined();
+    });
+
+    it('round-trips inputs and outputs through serialize → load', () => {
+      const wf: Workflow = {
+        id: 'contracts-rt',
+        entry: 'A',
+        nodes: {
+          A: {
+            id: 'A',
+            spec: {},
+            inputs: [
+              { key: 'x', required: true },
+              { key: 'y', required: false, description: 'optional input' },
+            ],
+            outputs: [
+              { key: 'result', guaranteed: true, description: 'the result' },
+              { key: 'debug', guaranteed: false },
+            ],
+          },
+        },
+        edges: [],
+      };
+      const json = serializeWorkflow(wf);
+      const loaded = loadWorkflow(json);
+      expect(loaded.nodes['A'].inputs).toEqual(wf.nodes['A'].inputs);
+      expect(loaded.nodes['A'].outputs).toEqual(wf.nodes['A'].outputs);
+    });
   });
 
   // -----------------------------------------------------------------------

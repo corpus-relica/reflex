@@ -31,6 +31,8 @@ export function createEngine(
 
 export type {
   NodeSpec,
+  NodeInput,
+  NodeOutput,
   ReturnMapping,
   InvocationSpec,
   Node,

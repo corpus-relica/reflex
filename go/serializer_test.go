@@ -511,6 +511,132 @@ func TestFixtureParity_RoundTripped_DefinePhysicalObject(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// Node contract tests (inputs/outputs)
+// ---------------------------------------------------------------------------
+
+func TestSerializeWorkflow_NodeContracts(t *testing.T) {
+	wf := &Workflow{
+		ID:    "contracts",
+		Entry: "A",
+		Nodes: map[string]*Node{
+			"A": {
+				ID:   "A",
+				Spec: NodeSpec{},
+				Inputs: []NodeInput{
+					{Key: "userName", Required: true, Description: "The user name"},
+				},
+				Outputs: []NodeOutput{
+					{Key: "greeting", Guaranteed: true, Description: "The greeting"},
+					{Key: "debug", Guaranteed: false},
+				},
+			},
+		},
+		Edges: []Edge{},
+	}
+	data, err := SerializeWorkflow(wf, nil)
+	if err != nil {
+		t.Fatalf("serialize: %v", err)
+	}
+
+	var parsed map[string]any
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	nodes := parsed["nodes"].(map[string]any)
+	nodeA := nodes["A"].(map[string]any)
+
+	inputs := nodeA["inputs"].([]any)
+	if len(inputs) != 1 {
+		t.Fatalf("inputs: got %d, want 1", len(inputs))
+	}
+	inp := inputs[0].(map[string]any)
+	if inp["key"] != "userName" || inp["required"] != true || inp["description"] != "The user name" {
+		t.Errorf("inputs[0] = %v", inp)
+	}
+
+	outputs := nodeA["outputs"].([]any)
+	if len(outputs) != 2 {
+		t.Fatalf("outputs: got %d, want 2", len(outputs))
+	}
+}
+
+func TestSerializeWorkflow_OmitsNilContracts(t *testing.T) {
+	wf := &Workflow{
+		ID:    "no-contracts",
+		Entry: "A",
+		Nodes: map[string]*Node{
+			"A": {ID: "A", Spec: NodeSpec{}},
+		},
+		Edges: []Edge{},
+	}
+	data, err := SerializeWorkflow(wf, nil)
+	if err != nil {
+		t.Fatalf("serialize: %v", err)
+	}
+
+	var parsed map[string]any
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	nodes := parsed["nodes"].(map[string]any)
+	nodeA := nodes["A"].(map[string]any)
+	if _, ok := nodeA["inputs"]; ok {
+		t.Error("inputs should be omitted when nil")
+	}
+	if _, ok := nodeA["outputs"]; ok {
+		t.Error("outputs should be omitted when nil")
+	}
+}
+
+func TestRoundTrip_NodeContracts(t *testing.T) {
+	wf := &Workflow{
+		ID:    "contracts-rt",
+		Entry: "A",
+		Nodes: map[string]*Node{
+			"A": {
+				ID:   "A",
+				Spec: NodeSpec{},
+				Inputs: []NodeInput{
+					{Key: "x", Required: true},
+					{Key: "y", Required: false, Description: "optional"},
+				},
+				Outputs: []NodeOutput{
+					{Key: "result", Guaranteed: true, Description: "the result"},
+					{Key: "debug", Guaranteed: false},
+				},
+			},
+		},
+		Edges: []Edge{},
+	}
+	data, err := SerializeWorkflow(wf, nil)
+	if err != nil {
+		t.Fatalf("serialize: %v", err)
+	}
+	loaded, err := LoadWorkflow(data, nil)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	node := loaded.Nodes["A"]
+	if len(node.Inputs) != 2 {
+		t.Fatalf("inputs: got %d, want 2", len(node.Inputs))
+	}
+	if node.Inputs[0].Key != "x" || !node.Inputs[0].Required {
+		t.Errorf("inputs[0] = %+v", node.Inputs[0])
+	}
+	if node.Inputs[1].Key != "y" || node.Inputs[1].Required || node.Inputs[1].Description != "optional" {
+		t.Errorf("inputs[1] = %+v", node.Inputs[1])
+	}
+	if len(node.Outputs) != 2 {
+		t.Fatalf("outputs: got %d, want 2", len(node.Outputs))
+	}
+	if node.Outputs[0].Key != "result" || !node.Outputs[0].Guaranteed || node.Outputs[0].Description != "the result" {
+		t.Errorf("outputs[0] = %+v", node.Outputs[0])
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Structural equality helper
 // ---------------------------------------------------------------------------
 

@@ -279,6 +279,54 @@ describe('loadWorkflow', () => {
       expect(() => loadWorkflow(42)).toThrow(WorkflowValidationError);
     });
 
+    it('loads node with inputs and outputs contracts', () => {
+      const wf = loadWorkflow({
+        id: 'contracts',
+        entry: 'A',
+        nodes: {
+          A: {
+            id: 'A',
+            spec: {},
+            inputs: [
+              { key: 'userName', required: true, description: 'The user name' },
+              { key: 'optional', required: false },
+            ],
+            outputs: [
+              { key: 'greeting', guaranteed: true, description: 'The greeting message' },
+            ],
+          },
+        },
+        edges: [],
+      });
+      expect(wf.nodes['A'].inputs).toHaveLength(2);
+      expect(wf.nodes['A'].inputs![0]).toEqual({
+        key: 'userName',
+        required: true,
+        description: 'The user name',
+      });
+      expect(wf.nodes['A'].inputs![1]).toEqual({
+        key: 'optional',
+        required: false,
+      });
+      expect(wf.nodes['A'].outputs).toHaveLength(1);
+      expect(wf.nodes['A'].outputs![0]).toEqual({
+        key: 'greeting',
+        guaranteed: true,
+        description: 'The greeting message',
+      });
+    });
+
+    it('nodes without contracts load with undefined inputs/outputs', () => {
+      const wf = loadWorkflow({
+        id: 'no-contracts',
+        entry: 'A',
+        nodes: { A: { id: 'A', spec: {} } },
+        edges: [],
+      });
+      expect(wf.nodes['A'].inputs).toBeUndefined();
+      expect(wf.nodes['A'].outputs).toBeUndefined();
+    });
+
     it('all schema violations use SCHEMA_VIOLATION code', () => {
       const cases = [
         { entry: 'A', nodes: {}, edges: [] }, // missing id

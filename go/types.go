@@ -42,6 +42,24 @@ type InvocationSpec struct {
 }
 
 // ---------------------------------------------------------------------------
+// 2.13 Node Contracts (declarations only — not enforced at runtime)
+// ---------------------------------------------------------------------------
+
+// NodeInput declares a blackboard key that a node expects to read.
+type NodeInput struct {
+	Key         string `json:"key"`
+	Required    bool   `json:"required"`
+	Description string `json:"description,omitempty"`
+}
+
+// NodeOutput declares a blackboard key that a node may write.
+type NodeOutput struct {
+	Key         string `json:"key"`
+	Guaranteed  bool   `json:"guaranteed"`
+	Description string `json:"description,omitempty"`
+}
+
+// ---------------------------------------------------------------------------
 // 2.2 Node
 // ---------------------------------------------------------------------------
 
@@ -51,6 +69,8 @@ type Node struct {
 	Description string          `json:"description,omitempty"`
 	Spec        NodeSpec        `json:"spec"`
 	Invokes     *InvocationSpec `json:"invokes,omitempty"`
+	Inputs      []NodeInput     `json:"inputs,omitempty"`
+	Outputs     []NodeOutput    `json:"outputs,omitempty"`
 }
 
 // ---------------------------------------------------------------------------

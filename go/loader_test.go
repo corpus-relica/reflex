@@ -298,3 +298,64 @@ func TestLoadWorkflow_SchemaFieldAllowed(t *testing.T) {
 		t.Errorf("id = %q", wf.ID)
 	}
 }
+
+func TestLoadWorkflow_NodeContracts(t *testing.T) {
+	data := []byte(`{
+		"id": "contracts",
+		"entry": "A",
+		"nodes": {
+			"A": {
+				"id": "A",
+				"spec": {},
+				"inputs": [
+					{"key": "userName", "required": true, "description": "The user name"},
+					{"key": "optional", "required": false}
+				],
+				"outputs": [
+					{"key": "greeting", "guaranteed": true, "description": "The greeting"}
+				]
+			}
+		},
+		"edges": []
+	}`)
+	wf, err := LoadWorkflow(data, nil)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	node := wf.Nodes["A"]
+	if len(node.Inputs) != 2 {
+		t.Fatalf("inputs: got %d, want 2", len(node.Inputs))
+	}
+	if node.Inputs[0].Key != "userName" || !node.Inputs[0].Required || node.Inputs[0].Description != "The user name" {
+		t.Errorf("inputs[0] = %+v", node.Inputs[0])
+	}
+	if node.Inputs[1].Key != "optional" || node.Inputs[1].Required {
+		t.Errorf("inputs[1] = %+v", node.Inputs[1])
+	}
+	if len(node.Outputs) != 1 {
+		t.Fatalf("outputs: got %d, want 1", len(node.Outputs))
+	}
+	if node.Outputs[0].Key != "greeting" || !node.Outputs[0].Guaranteed || node.Outputs[0].Description != "The greeting" {
+		t.Errorf("outputs[0] = %+v", node.Outputs[0])
+	}
+}
+
+func TestLoadWorkflow_NodeWithoutContracts(t *testing.T) {
+	data := []byte(`{
+		"id": "no-contracts",
+		"entry": "A",
+		"nodes": {"A": {"id": "A", "spec": {}}},
+		"edges": []
+	}`)
+	wf, err := LoadWorkflow(data, nil)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	node := wf.Nodes["A"]
+	if node.Inputs != nil {
+		t.Errorf("expected nil inputs, got %v", node.Inputs)
+	}
+	if node.Outputs != nil {
+		t.Errorf("expected nil outputs, got %v", node.Outputs)
+	}
+}

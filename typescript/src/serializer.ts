@@ -85,6 +85,12 @@ function serializeNodes(
         })),
       };
     }
+    if (node.inputs !== undefined) {
+      n.inputs = node.inputs;
+    }
+    if (node.outputs !== undefined) {
+      n.outputs = node.outputs;
+    }
     out[key] = n;
   }
   return out;

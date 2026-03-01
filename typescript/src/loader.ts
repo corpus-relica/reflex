@@ -9,6 +9,8 @@ import type {
   Guard,
   InvocationSpec,
   Node,
+  NodeInput,
+  NodeOutput,
   NodeSpec,
   Workflow,
 } from './types.js';
@@ -130,6 +132,12 @@ export function loadWorkflow(
           }),
         ),
       } satisfies InvocationSpec;
+    }
+    if (rawNode.inputs !== undefined) {
+      node.inputs = rawNode.inputs as NodeInput[];
+    }
+    if (rawNode.outputs !== undefined) {
+      node.outputs = rawNode.outputs as NodeOutput[];
     }
     nodes[key] = node;
   }
