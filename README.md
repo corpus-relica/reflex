@@ -11,7 +11,7 @@ Reflex provides a formally characterized execution model (Chomsky Type 1, contex
 | Language | Directory | Package | Status |
 |----------|-----------|---------|--------|
 | TypeScript | [`typescript/`](typescript/) | `@corpus-relica/reflex` | v0.5.0 — 364 tests, ESM + CJS |
-| Go | [`go/`](go/) | `github.com/corpus-relica/reflex/go` | v0.2.1 — 125 tests, stdlib only, zero dependencies |
+| Go | [`go/`](go/) | `github.com/corpus-relica/reflex/go` | v0.3.0 — 158 tests, stdlib only, zero dependencies |
 
 Both implementations conform to the shared [DESIGN.md](docs/DESIGN.md) specification. They are independent codebases targeting the same formal model.
 
