@@ -16,7 +16,30 @@ export type ValidationErrorCode =
   | 'NODE_ID_MISMATCH'
   | 'EMPTY_WORKFLOW'
   | 'SCHEMA_VIOLATION'
-  | 'UNKNOWN_GUARD_REFERENCE';
+  | 'UNKNOWN_GUARD_REFERENCE'
+  | 'WORKFLOW_NOT_FOUND';
+
+// ---------------------------------------------------------------------------
+// Verification Types (M8-2: Static Verification)
+// ---------------------------------------------------------------------------
+
+export type VerificationWarningCode =
+  | 'MISSING_REQUIRED_INPUT'
+  | 'RETURNMAP_KEY_NOT_IN_CHILD_OUTPUTS';
+
+export interface VerificationWarning {
+  code: VerificationWarningCode;
+  workflowId: string;
+  nodeId: string;
+  key: string;
+  message: string;
+}
+
+export interface VerificationResult {
+  workflowId: string;
+  valid: boolean;
+  warnings: VerificationWarning[];
+}
 
 export class WorkflowValidationError extends Error {
   public readonly code: ValidationErrorCode;
@@ -72,6 +95,152 @@ export class WorkflowRegistry {
 
   list(): string[] {
     return Array.from(this.workflows.keys());
+  }
+
+  /**
+   * Verify node contracts against DAG structure. Opt-in static analysis.
+   * Checks that required inputs have upstream producers and that returnMap
+   * keys appear in sub-workflow terminal outputs.
+   */
+  verify(workflowId: string): VerificationResult {
+    const workflow = this.workflows.get(workflowId);
+    if (!workflow) {
+      throw new WorkflowValidationError(
+        'WORKFLOW_NOT_FOUND',
+        workflowId,
+        `Cannot verify: workflow '${workflowId}' is not registered`,
+      );
+    }
+
+    const warnings = [
+      ...this.verifyInputContracts(workflow),
+      ...this.verifyReturnMaps(workflow),
+    ];
+
+    return {
+      workflowId,
+      valid: warnings.length === 0,
+      warnings,
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // Verification — private methods
+  // -------------------------------------------------------------------------
+
+  private topologicalOrder(workflow: Workflow): string[] {
+    const nodeIds = Object.keys(workflow.nodes);
+    const inDegree = new Map<string, number>();
+    const adjList = new Map<string, string[]>();
+
+    for (const id of nodeIds) {
+      inDegree.set(id, 0);
+      adjList.set(id, []);
+    }
+    for (const edge of workflow.edges) {
+      adjList.get(edge.from)!.push(edge.to);
+      inDegree.set(edge.to, inDegree.get(edge.to)! + 1);
+    }
+
+    const queue: string[] = [];
+    for (const [id, degree] of inDegree) {
+      if (degree === 0) queue.push(id);
+    }
+
+    const sorted: string[] = [];
+    while (queue.length > 0) {
+      const node = queue.shift()!;
+      sorted.push(node);
+      for (const neighbor of adjList.get(node)!) {
+        const newDegree = inDegree.get(neighbor)! - 1;
+        inDegree.set(neighbor, newDegree);
+        if (newDegree === 0) queue.push(neighbor);
+      }
+    }
+    return sorted;
+  }
+
+  private terminalNodeIds(workflow: Workflow): Set<string> {
+    const nodesWithOutgoing = new Set<string>();
+    for (const edge of workflow.edges) {
+      nodesWithOutgoing.add(edge.from);
+    }
+    return new Set(
+      Object.keys(workflow.nodes).filter((id) => !nodesWithOutgoing.has(id)),
+    );
+  }
+
+  private verifyInputContracts(workflow: Workflow): VerificationWarning[] {
+    const warnings: VerificationWarning[] = [];
+    const order = this.topologicalOrder(workflow);
+    const producedKeys = new Set<string>();
+
+    for (const nodeId of order) {
+      const node = workflow.nodes[nodeId]!;
+
+      if (node.inputs) {
+        for (const input of node.inputs) {
+          if (input.required && !producedKeys.has(input.key)) {
+            warnings.push({
+              code: 'MISSING_REQUIRED_INPUT',
+              workflowId: workflow.id,
+              nodeId,
+              key: input.key,
+              message: `Node '${nodeId}' requires input '${input.key}' but no upstream node declares it as an output`,
+            });
+          }
+        }
+      }
+
+      if (node.outputs) {
+        for (const output of node.outputs) {
+          producedKeys.add(output.key);
+        }
+      }
+    }
+
+    return warnings;
+  }
+
+  private verifyReturnMaps(workflow: Workflow): VerificationWarning[] {
+    const warnings: VerificationWarning[] = [];
+
+    for (const [nodeId, node] of Object.entries(workflow.nodes)) {
+      if (!node.invokes) continue;
+
+      const subWf = this.workflows.get(node.invokes.workflowId);
+      if (!subWf) continue;
+
+      const terminalIds = this.terminalNodeIds(subWf);
+      const childOutputKeys = new Set<string>();
+      let anyTerminalHasOutputs = false;
+
+      for (const terminalId of terminalIds) {
+        const terminal = subWf.nodes[terminalId]!;
+        if (terminal.outputs && terminal.outputs.length > 0) {
+          anyTerminalHasOutputs = true;
+          for (const output of terminal.outputs) {
+            childOutputKeys.add(output.key);
+          }
+        }
+      }
+
+      if (!anyTerminalHasOutputs) continue;
+
+      for (const mapping of node.invokes.returnMap) {
+        if (!childOutputKeys.has(mapping.childKey)) {
+          warnings.push({
+            code: 'RETURNMAP_KEY_NOT_IN_CHILD_OUTPUTS',
+            workflowId: workflow.id,
+            nodeId,
+            key: mapping.childKey,
+            message: `Node '${nodeId}' returnMap references child key '${mapping.childKey}' which is not declared in any terminal node of sub-workflow '${node.invokes.workflowId}'`,
+          });
+        }
+      }
+    }
+
+    return warnings;
   }
 
   // -------------------------------------------------------------------------

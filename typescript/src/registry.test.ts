@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { WorkflowRegistry, WorkflowValidationError } from './registry';
+import type { VerificationWarningCode } from './registry';
 import { Workflow, Node } from './types';
 
 // ---------------------------------------------------------------------------
@@ -430,6 +431,245 @@ describe('WorkflowRegistry', () => {
       expect(registry.get('wf-alpha')).toBe(wf1);
       expect(registry.get('wf-beta')).toBe(wf2);
       expect(registry.get('wf-gamma')).toBe(wf3);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // Verification (M8-2: Static Verification)
+  // -----------------------------------------------------------------------
+
+  describe('verify()', () => {
+    function contractNode(
+      id: string,
+      opts?: {
+        inputs?: Node['inputs'];
+        outputs?: Node['outputs'];
+        invokes?: Node['invokes'];
+      },
+    ): Node {
+      return {
+        id,
+        spec: {},
+        ...(opts?.inputs ? { inputs: opts.inputs } : {}),
+        ...(opts?.outputs ? { outputs: opts.outputs } : {}),
+        ...(opts?.invokes ? { invokes: opts.invokes } : {}),
+      };
+    }
+
+    it('returns clean result for workflow with no contracts', () => {
+      registry.register(linearWorkflow('no-contracts'));
+      const result = registry.verify('no-contracts');
+      expect(result.valid).toBe(true);
+      expect(result.warnings).toHaveLength(0);
+      expect(result.workflowId).toBe('no-contracts');
+    });
+
+    it('no warning when required input has upstream producer', () => {
+      const wf: Workflow = {
+        id: 'satisfied',
+        entry: 'A',
+        nodes: {
+          A: contractNode('A', {
+            outputs: [{ key: 'x', guaranteed: true }],
+          }),
+          B: contractNode('B', {
+            inputs: [{ key: 'x', required: true }],
+          }),
+        },
+        edges: [{ id: 'e1', from: 'A', to: 'B', event: 'NEXT' }],
+      };
+      registry.register(wf);
+      const result = registry.verify('satisfied');
+      expect(result.valid).toBe(true);
+      expect(result.warnings).toHaveLength(0);
+    });
+
+    it('MISSING_REQUIRED_INPUT when required input has no upstream producer', () => {
+      const wf: Workflow = {
+        id: 'missing-input',
+        entry: 'A',
+        nodes: {
+          A: contractNode('A'),
+          B: contractNode('B', {
+            inputs: [{ key: 'x', required: true }],
+          }),
+        },
+        edges: [{ id: 'e1', from: 'A', to: 'B', event: 'NEXT' }],
+      };
+      registry.register(wf);
+      const result = registry.verify('missing-input');
+      expect(result.valid).toBe(false);
+      expect(result.warnings).toHaveLength(1);
+      expect(result.warnings[0].code).toBe('MISSING_REQUIRED_INPUT');
+      expect(result.warnings[0].nodeId).toBe('B');
+      expect(result.warnings[0].key).toBe('x');
+    });
+
+    it('no warning for optional input with no upstream producer', () => {
+      const wf: Workflow = {
+        id: 'optional-input',
+        entry: 'A',
+        nodes: {
+          A: contractNode('A'),
+          B: contractNode('B', {
+            inputs: [{ key: 'x', required: false }],
+          }),
+        },
+        edges: [{ id: 'e1', from: 'A', to: 'B', event: 'NEXT' }],
+      };
+      registry.register(wf);
+      const result = registry.verify('optional-input');
+      expect(result.valid).toBe(true);
+      expect(result.warnings).toHaveLength(0);
+    });
+
+    it('RETURNMAP_KEY_NOT_IN_CHILD_OUTPUTS when childKey not in terminal outputs', () => {
+      const child: Workflow = {
+        id: 'child-wf',
+        entry: 'C',
+        nodes: {
+          C: contractNode('C', {
+            outputs: [{ key: 'actualOutput', guaranteed: true }],
+          }),
+        },
+        edges: [],
+      };
+      const parent: Workflow = {
+        id: 'parent-wf',
+        entry: 'P',
+        nodes: {
+          P: contractNode('P', {
+            invokes: {
+              workflowId: 'child-wf',
+              returnMap: [{ parentKey: 'result', childKey: 'wrongKey' }],
+            },
+          }),
+          DONE: contractNode('DONE'),
+        },
+        edges: [{ id: 'e1', from: 'P', to: 'DONE', event: 'NEXT' }],
+      };
+      registry.register(child);
+      registry.register(parent);
+      const result = registry.verify('parent-wf');
+      expect(result.valid).toBe(false);
+      expect(result.warnings).toHaveLength(1);
+      expect(result.warnings[0].code).toBe('RETURNMAP_KEY_NOT_IN_CHILD_OUTPUTS');
+      expect(result.warnings[0].key).toBe('wrongKey');
+    });
+
+    it('no returnMap warning when childKey is in terminal outputs', () => {
+      const child: Workflow = {
+        id: 'child-ok',
+        entry: 'C',
+        nodes: {
+          C: contractNode('C', {
+            outputs: [{ key: 'output', guaranteed: true }],
+          }),
+        },
+        edges: [],
+      };
+      const parent: Workflow = {
+        id: 'parent-ok',
+        entry: 'P',
+        nodes: {
+          P: contractNode('P', {
+            invokes: {
+              workflowId: 'child-ok',
+              returnMap: [{ parentKey: 'result', childKey: 'output' }],
+            },
+          }),
+          DONE: contractNode('DONE'),
+        },
+        edges: [{ id: 'e1', from: 'P', to: 'DONE', event: 'NEXT' }],
+      };
+      registry.register(child);
+      registry.register(parent);
+      const result = registry.verify('parent-ok');
+      expect(result.valid).toBe(true);
+      expect(result.warnings).toHaveLength(0);
+    });
+
+    it('no returnMap warning when sub-workflow terminal has no declared outputs', () => {
+      const child: Workflow = {
+        id: 'child-no-contracts',
+        entry: 'C',
+        nodes: { C: contractNode('C') },
+        edges: [],
+      };
+      const parent: Workflow = {
+        id: 'parent-unchecked',
+        entry: 'P',
+        nodes: {
+          P: contractNode('P', {
+            invokes: {
+              workflowId: 'child-no-contracts',
+              returnMap: [{ parentKey: 'result', childKey: 'anyKey' }],
+            },
+          }),
+          DONE: contractNode('DONE'),
+        },
+        edges: [{ id: 'e1', from: 'P', to: 'DONE', event: 'NEXT' }],
+      };
+      registry.register(child);
+      registry.register(parent);
+      const result = registry.verify('parent-unchecked');
+      expect(result.valid).toBe(true);
+    });
+
+    it('no returnMap warning when sub-workflow is not yet registered', () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const wf: Workflow = {
+        id: 'parent-unregistered-child',
+        entry: 'A',
+        nodes: {
+          A: contractNode('A', {
+            invokes: {
+              workflowId: 'not-registered',
+              returnMap: [{ parentKey: 'x', childKey: 'y' }],
+            },
+          }),
+          B: contractNode('B'),
+        },
+        edges: [{ id: 'e1', from: 'A', to: 'B', event: 'NEXT' }],
+      };
+      registry.register(wf);
+      const result = registry.verify('parent-unregistered-child');
+      expect(result.valid).toBe(true);
+      warnSpy.mockRestore();
+    });
+
+    it('throws WORKFLOW_NOT_FOUND for unregistered workflowId', () => {
+      expect(() => registry.verify('does-not-exist')).toThrow(
+        WorkflowValidationError,
+      );
+      try {
+        registry.verify('does-not-exist');
+      } catch (e) {
+        expect((e as WorkflowValidationError).code).toBe('WORKFLOW_NOT_FOUND');
+      }
+    });
+
+    it('multiple missing inputs produce multiple warnings', () => {
+      const wf: Workflow = {
+        id: 'multi-missing',
+        entry: 'A',
+        nodes: {
+          A: contractNode('A'),
+          B: contractNode('B', {
+            inputs: [
+              { key: 'x', required: true },
+              { key: 'y', required: true },
+            ],
+          }),
+        },
+        edges: [{ id: 'e1', from: 'A', to: 'B', event: 'NEXT' }],
+      };
+      registry.register(wf);
+      const result = registry.verify('multi-missing');
+      expect(result.valid).toBe(false);
+      expect(result.warnings).toHaveLength(2);
+      const keys = result.warnings.map((w) => w.key).sort();
+      expect(keys).toEqual(['x', 'y']);
     });
   });
 });

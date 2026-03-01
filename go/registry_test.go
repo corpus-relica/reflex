@@ -253,3 +253,278 @@ func assertValidationError(t *testing.T, err error, code ValidationErrorCode) {
 		t.Errorf("expected code %s, got %s: %s", code, ve.Code, ve.Message)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Verification (M8-2: Static Verification)
+// ---------------------------------------------------------------------------
+
+func TestVerify_CleanResultNoContracts(t *testing.T) {
+	r := NewRegistry()
+	_ = r.Register(linearWorkflow("wf"))
+	result, err := r.Verify("wf")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.Valid {
+		t.Error("expected valid=true for workflow with no contracts")
+	}
+	if len(result.Warnings) != 0 {
+		t.Errorf("expected 0 warnings, got %d", len(result.Warnings))
+	}
+	if result.WorkflowID != "wf" {
+		t.Errorf("workflowId = %q, want wf", result.WorkflowID)
+	}
+}
+
+func TestVerify_RequiredInputSatisfied(t *testing.T) {
+	r := NewRegistry()
+	wf := &Workflow{
+		ID:    "satisfied",
+		Entry: "A",
+		Nodes: map[string]*Node{
+			"A": {ID: "A", Spec: NodeSpec{}, Outputs: []NodeOutput{{Key: "x", Guaranteed: true}}},
+			"B": {ID: "B", Spec: NodeSpec{}, Inputs: []NodeInput{{Key: "x", Required: true}}},
+		},
+		Edges: []Edge{{ID: "e1", From: "A", To: "B", Event: "NEXT"}},
+	}
+	_ = r.Register(wf)
+	result, err := r.Verify("satisfied")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.Valid {
+		t.Error("expected valid=true")
+	}
+	if len(result.Warnings) != 0 {
+		t.Errorf("expected 0 warnings, got %d", len(result.Warnings))
+	}
+}
+
+func TestVerify_RequiredInputMissing(t *testing.T) {
+	r := NewRegistry()
+	wf := &Workflow{
+		ID:    "missing-input",
+		Entry: "A",
+		Nodes: map[string]*Node{
+			"A": {ID: "A", Spec: NodeSpec{}},
+			"B": {ID: "B", Spec: NodeSpec{}, Inputs: []NodeInput{{Key: "x", Required: true}}},
+		},
+		Edges: []Edge{{ID: "e1", From: "A", To: "B", Event: "NEXT"}},
+	}
+	_ = r.Register(wf)
+	result, err := r.Verify("missing-input")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Valid {
+		t.Error("expected valid=false")
+	}
+	if len(result.Warnings) != 1 {
+		t.Fatalf("expected 1 warning, got %d", len(result.Warnings))
+	}
+	w := result.Warnings[0]
+	if w.Code != WarnMissingRequiredInput {
+		t.Errorf("code = %q, want MISSING_REQUIRED_INPUT", w.Code)
+	}
+	if w.NodeID != "B" {
+		t.Errorf("nodeId = %q, want B", w.NodeID)
+	}
+	if w.Key != "x" {
+		t.Errorf("key = %q, want x", w.Key)
+	}
+}
+
+func TestVerify_OptionalInputNoProducer(t *testing.T) {
+	r := NewRegistry()
+	wf := &Workflow{
+		ID:    "optional-input",
+		Entry: "A",
+		Nodes: map[string]*Node{
+			"A": {ID: "A", Spec: NodeSpec{}},
+			"B": {ID: "B", Spec: NodeSpec{}, Inputs: []NodeInput{{Key: "x", Required: false}}},
+		},
+		Edges: []Edge{{ID: "e1", From: "A", To: "B", Event: "NEXT"}},
+	}
+	_ = r.Register(wf)
+	result, err := r.Verify("optional-input")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.Valid {
+		t.Error("expected valid=true for optional input")
+	}
+	if len(result.Warnings) != 0 {
+		t.Errorf("expected 0 warnings, got %d", len(result.Warnings))
+	}
+}
+
+func TestVerify_ReturnMapKeyNotInChildOutputs(t *testing.T) {
+	r := NewRegistry()
+	child := &Workflow{
+		ID:    "child-wf",
+		Entry: "C",
+		Nodes: map[string]*Node{
+			"C": {ID: "C", Spec: NodeSpec{}, Outputs: []NodeOutput{{Key: "actualOutput", Guaranteed: true}}},
+		},
+		Edges: []Edge{},
+	}
+	parent := &Workflow{
+		ID:    "parent-wf",
+		Entry: "P",
+		Nodes: map[string]*Node{
+			"P": {ID: "P", Spec: NodeSpec{}, Invokes: &InvocationSpec{
+				WorkflowID: "child-wf",
+				ReturnMap:  []ReturnMapping{{ParentKey: "result", ChildKey: "wrongKey"}},
+			}},
+			"DONE": {ID: "DONE", Spec: NodeSpec{}},
+		},
+		Edges: []Edge{{ID: "e1", From: "P", To: "DONE", Event: "NEXT"}},
+	}
+	_ = r.Register(child)
+	_ = r.Register(parent)
+	result, err := r.Verify("parent-wf")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Valid {
+		t.Error("expected valid=false")
+	}
+	if len(result.Warnings) != 1 {
+		t.Fatalf("expected 1 warning, got %d", len(result.Warnings))
+	}
+	w := result.Warnings[0]
+	if w.Code != WarnReturnMapKeyNotInChildOutputs {
+		t.Errorf("code = %q, want RETURNMAP_KEY_NOT_IN_CHILD_OUTPUTS", w.Code)
+	}
+	if w.Key != "wrongKey" {
+		t.Errorf("key = %q, want wrongKey", w.Key)
+	}
+}
+
+func TestVerify_ReturnMapKeyInChildOutputs(t *testing.T) {
+	r := NewRegistry()
+	child := &Workflow{
+		ID:    "child-ok",
+		Entry: "C",
+		Nodes: map[string]*Node{
+			"C": {ID: "C", Spec: NodeSpec{}, Outputs: []NodeOutput{{Key: "output", Guaranteed: true}}},
+		},
+		Edges: []Edge{},
+	}
+	parent := &Workflow{
+		ID:    "parent-ok",
+		Entry: "P",
+		Nodes: map[string]*Node{
+			"P": {ID: "P", Spec: NodeSpec{}, Invokes: &InvocationSpec{
+				WorkflowID: "child-ok",
+				ReturnMap:  []ReturnMapping{{ParentKey: "result", ChildKey: "output"}},
+			}},
+			"DONE": {ID: "DONE", Spec: NodeSpec{}},
+		},
+		Edges: []Edge{{ID: "e1", From: "P", To: "DONE", Event: "NEXT"}},
+	}
+	_ = r.Register(child)
+	_ = r.Register(parent)
+	result, err := r.Verify("parent-ok")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.Valid {
+		t.Error("expected valid=true")
+	}
+	if len(result.Warnings) != 0 {
+		t.Errorf("expected 0 warnings, got %d", len(result.Warnings))
+	}
+}
+
+func TestVerify_ReturnMapChildHasNoContracts(t *testing.T) {
+	r := NewRegistry()
+	child := &Workflow{
+		ID:    "child-no-contracts",
+		Entry: "C",
+		Nodes: map[string]*Node{
+			"C": {ID: "C", Spec: NodeSpec{}},
+		},
+		Edges: []Edge{},
+	}
+	parent := &Workflow{
+		ID:    "parent-unchecked",
+		Entry: "P",
+		Nodes: map[string]*Node{
+			"P": {ID: "P", Spec: NodeSpec{}, Invokes: &InvocationSpec{
+				WorkflowID: "child-no-contracts",
+				ReturnMap:  []ReturnMapping{{ParentKey: "result", ChildKey: "anyKey"}},
+			}},
+			"DONE": {ID: "DONE", Spec: NodeSpec{}},
+		},
+		Edges: []Edge{{ID: "e1", From: "P", To: "DONE", Event: "NEXT"}},
+	}
+	_ = r.Register(child)
+	_ = r.Register(parent)
+	result, err := r.Verify("parent-unchecked")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.Valid {
+		t.Error("expected valid=true when child has no contracts")
+	}
+}
+
+func TestVerify_ReturnMapChildNotRegistered(t *testing.T) {
+	r := NewRegistry()
+	wf := &Workflow{
+		ID:    "parent-unregistered",
+		Entry: "A",
+		Nodes: map[string]*Node{
+			"A": {ID: "A", Spec: NodeSpec{}, Invokes: &InvocationSpec{
+				WorkflowID: "not-registered",
+				ReturnMap:  []ReturnMapping{{ParentKey: "x", ChildKey: "y"}},
+			}},
+			"B": {ID: "B", Spec: NodeSpec{}},
+		},
+		Edges: []Edge{{ID: "e1", From: "A", To: "B", Event: "NEXT"}},
+	}
+	_ = r.Register(wf)
+	result, err := r.Verify("parent-unregistered")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.Valid {
+		t.Error("expected valid=true when child not registered")
+	}
+}
+
+func TestVerify_UnregisteredWorkflow(t *testing.T) {
+	r := NewRegistry()
+	_, err := r.Verify("does-not-exist")
+	if err == nil {
+		t.Fatal("expected error for unregistered workflow")
+	}
+}
+
+func TestVerify_MultipleMissingInputs(t *testing.T) {
+	r := NewRegistry()
+	wf := &Workflow{
+		ID:    "multi-missing",
+		Entry: "A",
+		Nodes: map[string]*Node{
+			"A": {ID: "A", Spec: NodeSpec{}},
+			"B": {ID: "B", Spec: NodeSpec{}, Inputs: []NodeInput{
+				{Key: "x", Required: true},
+				{Key: "y", Required: true},
+			}},
+		},
+		Edges: []Edge{{ID: "e1", From: "A", To: "B", Event: "NEXT"}},
+	}
+	_ = r.Register(wf)
+	result, err := r.Verify("multi-missing")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Valid {
+		t.Error("expected valid=false")
+	}
+	if len(result.Warnings) != 2 {
+		t.Fatalf("expected 2 warnings, got %d", len(result.Warnings))
+	}
+}

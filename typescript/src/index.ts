@@ -63,7 +63,12 @@ export type {
 
 export { WorkflowRegistry } from './registry.js';
 export { WorkflowValidationError } from './registry.js';
-export type { ValidationErrorCode } from './registry.js';
+export type {
+  ValidationErrorCode,
+  VerificationWarningCode,
+  VerificationWarning,
+  VerificationResult,
+} from './registry.js';
 
 export { ReflexEngine } from './engine.js';
 export { EngineError } from './engine.js';
