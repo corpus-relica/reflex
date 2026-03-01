@@ -1,0 +1,209 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/corpus-relica/reflex/docs/workflow-schema.json",
+  "title": "Reflex Workflow",
+  "description": "JSON Schema for a Reflex DAG workflow definition. See DESIGN.md for the formal specification.",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Optional JSON Schema reference for editor support."
+    },
+    "id": {
+      "type": "string",
+      "description": "Unique identifier for this workflow."
+    },
+    "entry": {
+      "type": "string",
+      "description": "ID of the entry node — must be a key in the nodes object."
+    },
+    "nodes": {
+      "type": "object",
+      "description": "Dictionary of node ID → node definition.",
+      "additionalProperties": { "$ref": "#/definitions/Node" }
+    },
+    "edges": {
+      "type": "array",
+      "description": "Directed edges connecting nodes in the DAG.",
+      "items": { "$ref": "#/definitions/Edge" }
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Optional freeform metadata for the workflow.",
+      "additionalProperties": true
+    }
+  },
+  "required": ["id", "entry", "nodes", "edges"],
+  "additionalProperties": false,
+
+  "definitions": {
+    "Node": {
+      "type": "object",
+      "description": "A single step in the workflow DAG.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique node identifier (must match the key in the nodes object)."
+        },
+        "description": {
+          "type": "string",
+          "description": "Optional human-readable description of this node."
+        },
+        "spec": {
+          "$ref": "#/definitions/NodeSpec"
+        },
+        "invokes": {
+          "$ref": "#/definitions/InvocationSpec"
+        }
+      },
+      "required": ["id", "spec"],
+      "additionalProperties": false
+    },
+
+    "NodeSpec": {
+      "type": "object",
+      "description": "Domain-specific data — opaque to Reflex. The decision agent interprets it, not the engine.",
+      "additionalProperties": true
+    },
+
+    "InvocationSpec": {
+      "type": "object",
+      "description": "Declares that a node is a composition point. Entering this node automatically starts the sub-workflow.",
+      "properties": {
+        "workflowId": {
+          "type": "string",
+          "description": "ID of the sub-workflow to invoke."
+        },
+        "returnMap": {
+          "type": "array",
+          "description": "How to propagate results from the child's local blackboard back to the parent.",
+          "items": { "$ref": "#/definitions/ReturnMapping" }
+        }
+      },
+      "required": ["workflowId", "returnMap"],
+      "additionalProperties": false
+    },
+
+    "ReturnMapping": {
+      "type": "object",
+      "description": "Maps a child blackboard key to a parent blackboard key on sub-workflow completion.",
+      "properties": {
+        "parentKey": {
+          "type": "string",
+          "description": "Key to write in the parent's local blackboard."
+        },
+        "childKey": {
+          "type": "string",
+          "description": "Key to read from the child's local blackboard."
+        }
+      },
+      "required": ["parentKey", "childKey"],
+      "additionalProperties": false
+    },
+
+    "Edge": {
+      "type": "object",
+      "description": "A directed edge connecting two nodes in the workflow DAG.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique edge identifier."
+        },
+        "from": {
+          "type": "string",
+          "description": "Source node ID."
+        },
+        "to": {
+          "type": "string",
+          "description": "Target node ID."
+        },
+        "event": {
+          "type": "string",
+          "description": "Named transition (e.g., 'NEXT', 'DEFINE_PART')."
+        },
+        "guard": {
+          "$ref": "#/definitions/Guard"
+        }
+      },
+      "required": ["id", "from", "to", "event"],
+      "additionalProperties": false
+    },
+
+    "Guard": {
+      "description": "Edge guard — a condition evaluated against the scoped blackboard. Discriminated on the 'type' field.",
+      "oneOf": [
+        {
+          "type": "object",
+          "description": "Passes if the key exists on the blackboard.",
+          "properties": {
+            "type": { "const": "exists" },
+            "key": { "type": "string" }
+          },
+          "required": ["type", "key"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "description": "Passes if the key does NOT exist on the blackboard.",
+          "properties": {
+            "type": { "const": "not-exists" },
+            "key": { "type": "string" }
+          },
+          "required": ["type", "key"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "description": "Passes if the key exists and its value equals the specified value.",
+          "properties": {
+            "type": { "const": "equals" },
+            "key": { "type": "string" },
+            "value": {
+              "description": "The value to compare against.",
+              "anyOf": [
+                { "type": "string" },
+                { "type": "number" },
+                { "type": "boolean" },
+                { "type": "null" }
+              ]
+            }
+          },
+          "required": ["type", "key", "value"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "description": "Passes if the key does not exist or its value does NOT equal the specified value.",
+          "properties": {
+            "type": { "const": "not-equals" },
+            "key": { "type": "string" },
+            "value": {
+              "description": "The value to compare against.",
+              "anyOf": [
+                { "type": "string" },
+                { "type": "number" },
+                { "type": "boolean" },
+                { "type": "null" }
+              ]
+            }
+          },
+          "required": ["type", "key", "value"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "description": "A named reference to a custom guard function. Resolved at load time against a guard registry.",
+          "properties": {
+            "type": { "const": "custom" },
+            "name": {
+              "type": "string",
+              "description": "Name of the custom guard function to resolve at load time."
+            }
+          },
+          "required": ["type", "name"],
+          "additionalProperties": false
+        }
+      ]
+    }
+  }
+}

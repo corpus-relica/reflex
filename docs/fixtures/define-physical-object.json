@@ -1,0 +1,75 @@
+{
+  "$schema": "../workflow-schema.json",
+  "id": "define-physical-object",
+  "entry": "CLASSIFY",
+  "nodes": {
+    "CLASSIFY": {
+      "id": "CLASSIFY",
+      "spec": {
+        "writes": [{ "key": "workflowType", "value": "define-physical-object" }],
+        "edge": "e-classify-basic"
+      }
+    },
+    "BASIC_DATA": {
+      "id": "BASIC_DATA",
+      "spec": {
+        "writes": [
+          { "key": "conceptName", "value": "Steel Pipe" },
+          { "key": "needsPart", "value": true }
+        ],
+        "edge": "e-basic-branch"
+      }
+    },
+    "BRANCH": {
+      "id": "BRANCH",
+      "spec": {
+        "edge": ["e-branch-to-part", "e-branch-to-spec"]
+      }
+    },
+    "DEFINE_PART": {
+      "id": "DEFINE_PART",
+      "spec": {},
+      "invokes": {
+        "workflowId": "define-part-object",
+        "returnMap": [
+          { "parentKey": "Part Concept", "childKey": "partConcept" }
+        ]
+      }
+    },
+    "SPEC_COMPOSE": {
+      "id": "SPEC_COMPOSE",
+      "spec": {
+        "writes": [
+          { "key": "specRelation", "value": "Steel Pipe specializes Physical Object" }
+        ]
+      }
+    },
+    "DONE": {
+      "id": "DONE",
+      "spec": {
+        "complete": true,
+        "writes": [{ "key": "status", "value": "physical-object-defined" }]
+      }
+    }
+  },
+  "edges": [
+    { "id": "e-classify-basic", "from": "CLASSIFY", "to": "BASIC_DATA", "event": "NEXT" },
+    { "id": "e-basic-branch", "from": "BASIC_DATA", "to": "BRANCH", "event": "NEXT" },
+    {
+      "id": "e-branch-to-part",
+      "from": "BRANCH",
+      "to": "DEFINE_PART",
+      "event": "DEFINE_PART",
+      "guard": { "type": "exists", "key": "needsPart" }
+    },
+    {
+      "id": "e-branch-to-spec",
+      "from": "BRANCH",
+      "to": "SPEC_COMPOSE",
+      "event": "SPEC_COMPOSE",
+      "guard": { "type": "not-exists", "key": "needsPart" }
+    },
+    { "id": "e-part-to-spec", "from": "DEFINE_PART", "to": "SPEC_COMPOSE", "event": "NEXT" },
+    { "id": "e-spec-done", "from": "SPEC_COMPOSE", "to": "DONE", "event": "NEXT" }
+  ]
+}

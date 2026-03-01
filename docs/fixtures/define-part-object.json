@@ -1,0 +1,30 @@
+{
+  "$schema": "../workflow-schema.json",
+  "id": "define-part-object",
+  "entry": "PART_CLASSIFY",
+  "nodes": {
+    "PART_CLASSIFY": {
+      "id": "PART_CLASSIFY",
+      "spec": {
+        "writes": [{ "key": "partContext", "value": "Physical Object — Part" }]
+      }
+    },
+    "PART_BASIC_DATA": {
+      "id": "PART_BASIC_DATA",
+      "spec": {
+        "writes": [{ "key": "partConcept", "value": "Aluminum Housing" }]
+      }
+    },
+    "PART_DONE": {
+      "id": "PART_DONE",
+      "spec": {
+        "complete": true,
+        "writes": [{ "key": "partStatus", "value": "complete" }]
+      }
+    }
+  },
+  "edges": [
+    { "id": "e-part-classify-basic", "from": "PART_CLASSIFY", "to": "PART_BASIC_DATA", "event": "NEXT" },
+    { "id": "e-part-basic-done", "from": "PART_BASIC_DATA", "to": "PART_DONE", "event": "NEXT" }
+  ]
+}
