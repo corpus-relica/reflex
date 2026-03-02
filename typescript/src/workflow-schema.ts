@@ -1,6 +1,12 @@
 // Runtime copy of docs/workflow-schema.json (JSON Schema draft-07).
 // Keep in sync with the canonical schema file.
 
+/**
+ * JSON Schema (draft-07) for Reflex workflow definitions. Used internally
+ * by {@link loadWorkflow} for validation. Exported for consumers who need
+ * to validate workflow JSON in build tools, linters, or IDE integrations
+ * without calling loadWorkflow().
+ */
 export const workflowSchema = {
   $schema: 'http://json-schema.org/draft-07/schema#',
   $id: 'https://github.com/corpus-relica/reflex/docs/workflow-schema.json',
