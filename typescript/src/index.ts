@@ -59,6 +59,8 @@ export type {
   GuardRegistry,
   RestoreOptions,
   PersistenceAdapter,
+  Cursor,
+  CursorReader,
 } from './types.js';
 
 // ---------------------------------------------------------------------------

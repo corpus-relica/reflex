@@ -156,6 +156,38 @@ export interface BlackboardReader {
 }
 
 // ---------------------------------------------------------------------------
+// Cursor API (incremental blackboard reads for streaming persistence)
+// ---------------------------------------------------------------------------
+
+/**
+ * A position in the blackboard entry log.
+ * Use with entriesFrom() to read only entries appended after this position.
+ * Cursor values are only valid for the ScopedBlackboard that produced them.
+ */
+export type Cursor = number;
+
+/**
+ * Read-only cursor interface for incremental blackboard reads.
+ * Use cursor() to snapshot the current position, then entriesFrom() after
+ * subsequent steps to retrieve only new entries.
+ *
+ * This is the interface returned by engine.currentBlackboard() — it
+ * intentionally does NOT expose append() or reader() (write access).
+ */
+export interface CursorReader {
+  /** Returns the current end position of the entry log. */
+  cursor(): Cursor;
+  /**
+   * Returns entries appended at or after position c, plus the cursor for
+   * the new end position.
+   *
+   * If c is negative, treats it as 0 (returns all entries).
+   * If c is at or past the end, returns [] and the current end position.
+   */
+  entriesFrom(c: Cursor): [BlackboardEntry[], Cursor];
+}
+
+// ---------------------------------------------------------------------------
 // 2.10 Decision Agent
 // ---------------------------------------------------------------------------
 
