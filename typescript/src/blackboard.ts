@@ -6,6 +6,8 @@ import {
   BlackboardReader,
   BlackboardSource,
   BlackboardWrite,
+  Cursor,
+  CursorReader,
 } from './types.js';
 
 // ---------------------------------------------------------------------------
@@ -122,7 +124,7 @@ export class ScopedBlackboardReader implements BlackboardReader {
  * Use `reader()` to construct a `ScopedBlackboardReader` that includes this
  * scope's entries plus any ancestor scopes from the call stack.
  */
-export class ScopedBlackboard {
+export class ScopedBlackboard implements CursorReader {
   private readonly entries: BlackboardEntry[] = [];
 
   constructor(entries?: BlackboardEntry[]) {
@@ -156,6 +158,32 @@ export class ScopedBlackboard {
    */
   getEntries(): readonly BlackboardEntry[] {
     return [...this.entries];
+  }
+
+  /**
+   * Returns the current end position of the entry log.
+   * Pass the returned cursor to entriesFrom() after subsequent append() calls
+   * to retrieve only the new entries.
+   */
+  cursor(): Cursor {
+    return this.entries.length;
+  }
+
+  /**
+   * Returns entries appended at or after position c, plus the cursor for the
+   * new end position. Enables efficient incremental reads for streaming
+   * persistence (e.g., NDJSON logging).
+   *
+   * If c is negative, treats it as 0 (returns all entries).
+   * If c is at or past the end, returns [] and the current end position.
+   */
+  entriesFrom(c: Cursor): [BlackboardEntry[], Cursor] {
+    const end = this.entries.length;
+    const start = c < 0 ? 0 : c;
+    if (start >= end) {
+      return [[], end];
+    }
+    return [this.entries.slice(start, end), end];
   }
 
   /**

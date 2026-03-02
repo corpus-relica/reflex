@@ -25,6 +25,7 @@ import {
   EngineStatus,
   EngineSnapshot,
   InitOptions,
+  CursorReader,
 } from './types.js';
 import { WorkflowRegistry } from './registry.js';
 import { ScopedBlackboard, ScopedBlackboardReader } from './blackboard.js';
@@ -446,6 +447,20 @@ export class ReflexEngine {
   currentWorkflow(): Workflow | null {
     if (this._currentWorkflowId === null) return null;
     return this._registry.get(this._currentWorkflowId) ?? null;
+  }
+
+  /**
+   * Returns a read-only cursor interface for the active workflow's blackboard.
+   * During sub-workflow execution, this returns the child workflow's blackboard
+   * (not the parent's).
+   *
+   * Use this for cursor-based incremental reads (e.g., streaming persistence).
+   * For scoped reads across the full call stack, use blackboard() instead.
+   *
+   * Returns null if no session is active (before init() is called).
+   */
+  currentBlackboard(): CursorReader | null {
+    return this._currentBlackboard;
   }
 
   blackboard(): BlackboardReader {

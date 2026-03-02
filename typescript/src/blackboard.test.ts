@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { ScopedBlackboardReader, ScopedBlackboard } from './blackboard';
-import { BlackboardEntry, BlackboardSource, BlackboardWrite } from './types';
+import { BlackboardEntry, BlackboardSource, BlackboardWrite, Cursor } from './types';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -818,6 +818,120 @@ describe('Blackboard integration (M2-3)', () => {
     it('reader.local() returns empty array', () => {
       const bb = new ScopedBlackboard();
       expect(bb.reader().local()).toEqual([]);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // Cursor API (issue #87 — parity with Go #83/#85)
+  // -----------------------------------------------------------------------
+
+  describe('Cursor API', () => {
+    it('cursor() returns 0 on empty blackboard', () => {
+      const bb = new ScopedBlackboard();
+      expect(bb.cursor()).toBe(0);
+    });
+
+    it('cursor() reflects entry count after append', () => {
+      const bb = new ScopedBlackboard();
+      expect(bb.cursor()).toBe(0);
+      bb.append([{ key: 'a', value: 1 }], src);
+      expect(bb.cursor()).toBe(1);
+      bb.append([{ key: 'b', value: 2 }, { key: 'c', value: 3 }], src);
+      expect(bb.cursor()).toBe(3);
+    });
+
+    it('entriesFrom(0) returns all entries', () => {
+      const bb = new ScopedBlackboard();
+      bb.append([{ key: 'a', value: 1 }], src);
+      bb.append([{ key: 'b', value: 2 }], src);
+      const [entries, next] = bb.entriesFrom(0);
+      expect(entries).toHaveLength(2);
+      expect(entries[0].key).toBe('a');
+      expect(entries[1].key).toBe('b');
+      expect(next).toBe(2);
+    });
+
+    it('entriesFrom(cursor) returns only new entries since that cursor', () => {
+      const bb = new ScopedBlackboard();
+      bb.append([{ key: 'a', value: 1 }], src);
+      const cursor: Cursor = bb.cursor(); // 1
+      bb.append([{ key: 'b', value: 2 }], src);
+      bb.append([{ key: 'c', value: 3 }], src);
+
+      const [entries, next] = bb.entriesFrom(cursor);
+      expect(entries).toHaveLength(2);
+      expect(entries[0].key).toBe('b');
+      expect(entries[1].key).toBe('c');
+      expect(next).toBe(3);
+    });
+
+    it('entriesFrom past end returns empty array and current position', () => {
+      const bb = new ScopedBlackboard();
+      bb.append([{ key: 'a', value: 1 }], src);
+      const end = bb.cursor();
+
+      const [entries, next] = bb.entriesFrom(end);
+      expect(entries).toEqual([]);
+      expect(next).toBe(end);
+
+      // Past end also works
+      const [entries2, next2] = bb.entriesFrom(end + 10);
+      expect(entries2).toEqual([]);
+      expect(next2).toBe(end);
+    });
+
+    it('entriesFrom(-1) treated as 0, returns all entries', () => {
+      const bb = new ScopedBlackboard();
+      bb.append([{ key: 'a', value: 1 }], src);
+      bb.append([{ key: 'b', value: 2 }], src);
+      const [entries, next] = bb.entriesFrom(-1);
+      expect(entries).toHaveLength(2);
+      expect(next).toBe(2);
+    });
+
+    it('cursor() on seeded blackboard starts at seed length', () => {
+      const seed = [entry('x', 1), entry('y', 2), entry('z', 3)];
+      const bb = new ScopedBlackboard(seed);
+      expect(bb.cursor()).toBe(3);
+    });
+
+    it('multiple sequential reads accumulate without duplicates', () => {
+      const bb = new ScopedBlackboard();
+      const collected: string[] = [];
+      let cursor: Cursor = bb.cursor();
+
+      bb.append([{ key: 'a', value: 1 }], src);
+      {
+        const [entries, next] = bb.entriesFrom(cursor);
+        collected.push(...entries.map((e) => e.key));
+        cursor = next;
+      }
+
+      bb.append([{ key: 'b', value: 2 }], src);
+      bb.append([{ key: 'c', value: 3 }], src);
+      {
+        const [entries, next] = bb.entriesFrom(cursor);
+        collected.push(...entries.map((e) => e.key));
+        cursor = next;
+      }
+
+      // No new entries
+      {
+        const [entries, next] = bb.entriesFrom(cursor);
+        collected.push(...entries.map((e) => e.key));
+        cursor = next;
+      }
+
+      expect(collected).toEqual(['a', 'b', 'c']);
+    });
+
+    it('entriesFrom() returns a copy — mutations do not affect internal state', () => {
+      const bb = new ScopedBlackboard();
+      bb.append([{ key: 'a', value: 1 }], src);
+      const [entries] = bb.entriesFrom(0);
+      entries.push(entry('hack', 99));
+      const [fresh] = bb.entriesFrom(0);
+      expect(fresh).toHaveLength(1);
     });
   });
 });
