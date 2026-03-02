@@ -1,6 +1,6 @@
 {
   "name": "@corpus-relica/reflex",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "DAG-based workflow orchestration with call stack composition and append-only blackboard semantics",
   "license": "MIT",
   "type": "module",

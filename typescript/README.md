@@ -179,7 +179,7 @@ while (true) {
 
 ## Status
 
-**v0.6.0** — 377 tests passing. ESM + CJS dual output.
+**v0.6.1** — 380 tests passing. ESM + CJS dual output.
 
 ## Documentation
 
@@ -191,6 +191,8 @@ while (true) {
 MIT — see [LICENSE](../LICENSE)
 
 ## Changelog
+
+**v0.6.1** — Bug fix: `Decision.Writes` on suspend are now applied to the blackboard (previously silently dropped). `blackboard:write` event emitted before `engine:suspend`. 380 tests.
 
 **v0.6.0** — Cursor API for streaming persistence: `Cursor` type, `CursorReader` interface, `ScopedBlackboard.cursor()` and `entriesFrom()`, `engine.currentBlackboard()` returning read-only `CursorReader`. 377 tests.
 
