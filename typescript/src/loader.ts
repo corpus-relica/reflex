@@ -1,7 +1,7 @@
 // Reflex — Workflow Loader
 // Implements M7-2: Load and validate JSON workflow definitions
 
-import Ajv from 'ajv';
+import { Ajv } from 'ajv';
 import type {
   BuiltinGuard,
   Edge,
@@ -100,7 +100,7 @@ export function loadWorkflow(
   }
 
   // From here the data is structurally valid per the schema.
-  const raw = data as Record<string, unknown>;
+  const raw = data as unknown as Record<string, unknown>;
 
   const id = raw.id as string;
   const entry = raw.entry as string;
