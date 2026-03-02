@@ -5,6 +5,11 @@
 // 2.3 NodeSpec — Opaque to Reflex
 // ---------------------------------------------------------------------------
 
+/**
+ * Opaque payload attached to each node. Reflex never reads or interprets
+ * NodeSpec — it is passed through to the decision agent for domain-specific
+ * interpretation (e.g., LLM prompts, rule definitions, UI instructions).
+ */
 export interface NodeSpec {
   [key: string]: unknown;
 }
@@ -13,6 +18,12 @@ export interface NodeSpec {
 // 2.5 ReturnMapping
 // ---------------------------------------------------------------------------
 
+/**
+ * Maps a child workflow's local blackboard key to a parent blackboard key.
+ * On sub-workflow completion, each mapping copies the child's value into
+ * the parent's local blackboard — this is how results flow back up the
+ * call stack.
+ */
 export interface ReturnMapping {
   parentKey: string;
   childKey: string;
@@ -22,6 +33,13 @@ export interface ReturnMapping {
 // 2.4 InvocationSpec
 // ---------------------------------------------------------------------------
 
+/**
+ * Marks a node as a composition point that automatically invokes a
+ * sub-workflow on entry. The decision agent is NOT consulted at invocation
+ * nodes — they are pure structural connectors. After the sub-workflow
+ * completes, {@link ReturnMapping | returnMap} copies results back to the
+ * parent's blackboard.
+ */
 export interface InvocationSpec {
   workflowId: string;
   returnMap: ReturnMapping[];
@@ -31,12 +49,22 @@ export interface InvocationSpec {
 // 2.13 Node Contracts (declarations only — not enforced at runtime)
 // ---------------------------------------------------------------------------
 
+/**
+ * Declares a blackboard key that a node expects to read. Part of the
+ * node contracts system (M8) — declarations only, not enforced at runtime.
+ * Used by {@link WorkflowRegistry.verify | verify()} for static analysis.
+ */
 export interface NodeInput {
   key: string;
   required: boolean;
   description?: string;
 }
 
+/**
+ * Declares a blackboard key that a node may write. Part of the node
+ * contracts system (M8) — declarations only, not enforced at runtime.
+ * Used by {@link WorkflowRegistry.verify | verify()} for static analysis.
+ */
 export interface NodeOutput {
   key: string;
   guaranteed: boolean;
@@ -47,6 +75,11 @@ export interface NodeOutput {
 // 2.2 Node
 // ---------------------------------------------------------------------------
 
+/**
+ * A node in a workflow DAG. If {@link InvocationSpec | invokes} is set, the
+ * node is a composition point that automatically starts a sub-workflow on
+ * entry. Otherwise, the decision agent is called to resolve the node.
+ */
 export interface Node {
   id: string;
   description?: string;
@@ -60,23 +93,42 @@ export interface Node {
 // 2.8 Guards
 // ---------------------------------------------------------------------------
 
+/**
+ * One of four built-in guard types evaluated against the scoped blackboard.
+ * Built-in guards are total by construction — they always terminate and
+ * produce a boolean. `value` is required for `equals` and `not-equals`;
+ * equality uses numeric-aware comparison with deep-equal fallback.
+ */
 export interface BuiltinGuard {
   type: 'exists' | 'equals' | 'not-exists' | 'not-equals';
   key: string;
   value?: unknown;
 }
 
+/**
+ * A user-defined guard function evaluated against the scoped blackboard.
+ * Custom guards must be total, terminating, and side-effect free —
+ * violations break Reflex's formal guarantees (Type 1 ceiling).
+ *
+ * @see GuardRegistry for JSON workflow integration
+ */
 export interface CustomGuard {
   type: 'custom';
   evaluate: (blackboard: BlackboardReader) => boolean;
 }
 
+/** Discriminated union of built-in and custom guard types. */
 export type Guard = BuiltinGuard | CustomGuard;
 
 // ---------------------------------------------------------------------------
 // 2.6 Edge
 // ---------------------------------------------------------------------------
 
+/**
+ * A directed edge in a workflow DAG. Edges without a guard are always
+ * valid. At fan-out points, guards filter which edges are presented to
+ * the decision agent as valid transitions.
+ */
 export interface Edge {
   id: string;
   from: string;
@@ -89,6 +141,12 @@ export interface Edge {
 // 2.1 Workflow Definition
 // ---------------------------------------------------------------------------
 
+/**
+ * A directed acyclic graph of nodes and edges. Acyclicity is enforced at
+ * registration time — repetition happens through recursive sub-workflow
+ * invocation via {@link InvocationSpec}, keeping loops visible in the
+ * call stack rather than hidden in graph structure.
+ */
 export interface Workflow {
   id: string;
   entry: string;
@@ -101,12 +159,22 @@ export interface Workflow {
 // 2.7 Blackboard
 // ---------------------------------------------------------------------------
 
+/**
+ * Provenance metadata attached to every blackboard entry, recording which
+ * workflow and node produced the value and the call stack depth at write time.
+ */
 export interface BlackboardSource {
   workflowId: string;
   nodeId: string;
   stackDepth: number;
 }
 
+/**
+ * An immutable entry in the append-only blackboard. Multiple entries may
+ * share the same key — {@link BlackboardReader.get | get()} returns the
+ * most recent value, while {@link BlackboardReader.getAll | getAll()}
+ * returns the full history.
+ */
 export interface BlackboardEntry {
   key: string;
   value: unknown;
@@ -118,6 +186,10 @@ export interface BlackboardEntry {
 // 2.10 BlackboardWrite (part of Decision)
 // ---------------------------------------------------------------------------
 
+/**
+ * A key-value pair to be appended to the blackboard. Used in
+ * {@link Decision} writes and {@link InitOptions} seed values.
+ */
 export interface BlackboardWrite {
   key: string;
   value: unknown;
@@ -127,6 +199,11 @@ export interface BlackboardWrite {
 // 2.12 Init Options
 // ---------------------------------------------------------------------------
 
+/**
+ * Options for {@link ReflexEngine.init | engine.init()}. The optional
+ * blackboard field pre-seeds the root workflow's blackboard before the
+ * first step — useful for injecting configuration or external context.
+ */
 export interface InitOptions {
   blackboard?: BlackboardWrite[];
 }
@@ -135,6 +212,11 @@ export interface InitOptions {
 // 2.9 Call Stack
 // ---------------------------------------------------------------------------
 
+/**
+ * A saved execution context on the call stack. When a sub-workflow is
+ * invoked, the parent's frame is pushed onto the stack and restored when
+ * the child completes. Exposed read-only in {@link DecisionContext.stack}.
+ */
 export interface StackFrame {
   workflowId: string;
   currentNodeId: string;
@@ -146,12 +228,23 @@ export interface StackFrame {
 // 2.11 Blackboard Reader
 // ---------------------------------------------------------------------------
 
+/**
+ * Read-only view of the scoped blackboard. Reads walk the scope chain
+ * (local → parent → grandparent) so child workflows can see ancestor
+ * context without explicit parameter passing.
+ */
 export interface BlackboardReader {
+  /** Returns the most recent value for `key`, or `undefined` if not found. */
   get(key: string): unknown | undefined;
+  /** Returns `true` if `key` exists anywhere in the scope chain. */
   has(key: string): boolean;
+  /** Returns all entries for `key` across the scope chain (newest first). */
   getAll(key: string): BlackboardEntry[];
+  /** Returns all entries across the scope chain. */
   entries(): BlackboardEntry[];
+  /** Returns all distinct keys across the scope chain. */
   keys(): string[];
+  /** Returns only entries from the current (innermost) workflow scope. */
   local(): BlackboardEntry[];
 }
 
@@ -191,6 +284,11 @@ export interface CursorReader {
 // 2.10 Decision Agent
 // ---------------------------------------------------------------------------
 
+/**
+ * The context presented to the decision agent at each non-invocation step.
+ * Contains the current node, its workflow, the scoped blackboard, valid
+ * outgoing edges (after guard evaluation), and the call stack.
+ */
 export interface DecisionContext {
   workflow: Workflow;
   node: Node;
@@ -199,11 +297,26 @@ export interface DecisionContext {
   stack: ReadonlyArray<StackFrame>;
 }
 
+/**
+ * The decision agent's response for a single step.
+ *
+ * - `advance` — pick an edge from {@link DecisionContext.validEdges} and
+ *   optionally write to the blackboard.
+ * - `suspend` — pause execution with a reason string; the engine becomes
+ *   resumable. Writes are applied before the suspend takes effect.
+ * - `complete` — terminate the current workflow. Only valid at terminal
+ *   nodes (no outgoing edges); the engine rejects it otherwise.
+ */
 export type Decision =
   | { type: 'advance'; edge: string; writes?: BlackboardWrite[] }
   | { type: 'suspend'; reason: string; writes?: BlackboardWrite[] }
   | { type: 'complete'; writes?: BlackboardWrite[] };
 
+/**
+ * The pluggable core of Reflex. Implement this interface to provide
+ * domain-specific step resolution — LLM reasoning, rule engines, human
+ * input, or any combination. Reflex provides no default agent.
+ */
 export interface DecisionAgent {
   resolve(context: DecisionContext): Promise<Decision>;
 }
@@ -212,6 +325,15 @@ export interface DecisionAgent {
 // 3.2 Execution Engine — StepResult and EngineEvent
 // ---------------------------------------------------------------------------
 
+/**
+ * Result of a single {@link ReflexEngine.step | step()} call.
+ *
+ * - `advanced` — moved to a new node via an edge.
+ * - `invoked` — entered a sub-workflow at a composition node.
+ * - `popped` — sub-workflow completed, returned to parent.
+ * - `completed` — root workflow finished.
+ * - `suspended` — agent requested a pause.
+ */
 export type StepResult =
   | { status: 'advanced'; node: Node }
   | { status: 'invoked'; workflow: Workflow; node: Node }
@@ -219,6 +341,12 @@ export type StepResult =
   | { status: 'completed' }
   | { status: 'suspended'; reason: string };
 
+/**
+ * Events emitted by the engine during execution. Register handlers with
+ * {@link ReflexEngine.on | engine.on()}. Emission order within a step:
+ * `node:exit` → `edge:traverse` → `node:enter` → `blackboard:write` →
+ * terminal events (`engine:complete`, `engine:suspend`, `engine:error`).
+ */
 export type EngineEvent =
   | 'node:enter'
   | 'node:exit'
@@ -234,20 +362,35 @@ export type EngineEvent =
 // 3.2 Execution Engine — EngineStatus, RunResult, EventHandler
 // ---------------------------------------------------------------------------
 
+/**
+ * Engine lifecycle states: `idle` (before init), `running` (stepping),
+ * `suspended` (paused, resumable), `completed` (terminal), `error`.
+ */
 export type EngineStatus = 'idle' | 'running' | 'suspended' | 'completed' | 'error';
 
+/**
+ * Result of {@link ReflexEngine.run | engine.run()}, which steps until
+ * completion, suspension, or error. Errors are caught and wrapped rather
+ * than thrown.
+ */
 export type RunResult =
   | { status: 'completed' }
   | { status: 'suspended'; reason: string }
   | { status: 'error'; error: unknown };
 
+/** Callback for engine events. The payload shape is event-specific. */
 export type EventHandler = (payload?: unknown) => void;
 
 // ---------------------------------------------------------------------------
 // 4.2 Guard Registry
 // ---------------------------------------------------------------------------
 
-/** Maps guard names (from JSON) to evaluate functions. */
+/**
+ * Maps guard names (from JSON workflow definitions) to evaluate functions.
+ * Used by {@link loadWorkflow} to resolve named guards back to
+ * {@link CustomGuard} implementations. Guard functions must be total,
+ * terminating, and side-effect free.
+ */
 export type GuardRegistry = Record<
   string,
   (blackboard: BlackboardReader) => boolean
