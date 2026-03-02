@@ -179,11 +179,12 @@ while (true) {
 
 ## Status
 
-**v0.6.1** — 380 tests passing. ESM + CJS dual output.
+**v1.0.0** — 380 tests passing. ESM + CJS dual output. Stable public API.
 
 ## Documentation
 
 - [DESIGN.md](../docs/DESIGN.md) — Formal model, core types, runtime architecture, extension points, boundaries
+- [MIGRATION-v1.md](../docs/MIGRATION-v1.md) — Upgrade guide from v0.x to v1.0
 - [ROADMAP-v-alpha.md](../docs/ROADMAP-v-alpha.md) — V-alpha implementation plan (6 milestones, 24 issues) — completed
 
 ## License
@@ -191,6 +192,8 @@ while (true) {
 MIT — see [LICENSE](../LICENSE)
 
 ## Changelog
+
+**v1.0.0** — First stable release. Public API locked — breaking changes require a major version bump. All M7–M10 milestones complete: declarative workflows (`loadWorkflow`, `serializeWorkflow`, JSON Schema), node contracts (`inputs`/`outputs` on nodes, `registry.verify()`), persistence (`engine.snapshot()`, `restoreEngine()`), cursor API (`currentBlackboard()`, `entriesFrom()`). JSDoc on all public symbols. 380 tests. See [MIGRATION-v1.md](../docs/MIGRATION-v1.md) for the upgrade guide.
 
 **v0.6.1** — Bug fix: `Decision.Writes` on suspend are now applied to the blackboard (previously silently dropped). `blackboard:write` event emitted before `engine:suspend`. 380 tests.
 

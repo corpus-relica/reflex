@@ -529,7 +529,7 @@ The following items from v-alpha's deferred list are now planned for v1.0 (see [
 
 These are deliberate non-goals of the Reflex engine — not deferred, but excluded by design:
 
-- **Parallel execution / fork-join**: The formal model is a pushdown automaton with a single program counter. Fork/join introduces concurrent program counters, fundamentally changing what "step" means and breaking the deterministic trace property. Consumers who need concurrency handle it in their agent or application code — Reflex orchestrates the sequential decision path, not the parallel execution.
+- **Parallel execution / fork-join**: Excluded by design — see Section 7 for the full rationale. Consumers who need concurrency handle it in their agent or application code.
 - **Built-in decision agents**: Reflex provides the interface, not implementations. LLM agents, rule engines, human UIs — these are consumer concerns.
 - **Built-in persistence adapters**: Reflex defines the snapshot format and adapter interface. Consumers provide their own storage (file, database, etc.).
 - **Distributed execution**: Engine instances across processes or machines. Reflex is a single-process, single-session engine.
@@ -542,6 +542,34 @@ The following remain interesting but are not planned for v1.0:
 - **Edge exhaustiveness checks**: Static verification that all possible blackboard states at a fan-out point are covered by guards
 - **Parent-to-child value passing**: Explicit push of specific parent values into child scope on invocation (currently unnecessary because child can read parent scope via the scope chain)
 - **Hot-reload workflows**: Swap workflow definition mid-execution
+
+---
+
+## 7. Design Rationale: The Single-Thread Invariant
+
+Reflex deliberately excludes parallel execution (fork/join). This is not a limitation to be solved later — it is a design principle that preserves the formal properties described in Section 1.
+
+### 7.1 The Formal Argument
+
+Reflex implements a pushdown automaton with a **single program counter**. At any point during execution, exactly one node is active, exactly one step resolution is in progress, and exactly one transition is being evaluated. This is the single-thread invariant.
+
+Fork/join would require **multiple simultaneous program counters** — several nodes active at once, each producing blackboard writes independently. This changes the system in three ways:
+
+1. **"Step" becomes ambiguous.** With one program counter, `step()` means "advance the single active node and resolve the next transition." With concurrent branches, `step()` must either advance all branches (losing per-node granularity) or advance one branch (requiring a scheduler, introducing nondeterminism in execution order).
+
+2. **The deterministic trace property breaks.** With serial execution, the sequence of events (`node:enter`, `blackboard:write`, `node:exit`) is fully determined by the workflow graph and decision agent responses. With concurrent branches, the interleaving of events across branches depends on scheduling — the same inputs can produce different event orderings.
+
+3. **Blackboard coherence degrades.** The append-only blackboard's guarantee — that established context is never contradicted, only superseded — depends on a total ordering of writes. Concurrent branches writing to the same key create an ordering ambiguity: which write is "later"? Resolving this requires either a conflict resolution policy (complexity) or isolated branch-local blackboards (breaking the shared-context model that makes Reflex context-sensitive).
+
+### 7.2 The Practical Consequence
+
+Consumers who need concurrent execution have two clean options:
+
+- **Concurrency in the agent.** The decision agent can spawn parallel work internally (HTTP requests, LLM calls, database queries) and return a single decision. The engine sees a single synchronous step; the parallelism is invisible to the formal model.
+
+- **Concurrency above the engine.** Run multiple independent engine instances in parallel, each with its own workflow and blackboard. Coordinate results in application code. This preserves the per-engine formal properties while allowing system-level parallelism.
+
+Both approaches keep the engine's formal model intact. Reflex orchestrates the sequential decision path — the consumer decides where parallelism lives.
 
 ---
 

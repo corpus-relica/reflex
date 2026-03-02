@@ -10,7 +10,7 @@ Reflex provides a formally characterized execution model (Chomsky Type 1, contex
 
 | Language | Directory | Package | Status |
 |----------|-----------|---------|--------|
-| TypeScript | [`typescript/`](typescript/) | `@corpus-relica/reflex` | v0.6.1 — 380 tests, ESM + CJS |
+| TypeScript | [`typescript/`](typescript/) | `@corpus-relica/reflex` | v1.0.0 — 380 tests, ESM + CJS, stable API |
 | Go | [`go/`](go/) | `github.com/corpus-relica/reflex/go` | v0.3.0 — 158 tests, stdlib only, zero dependencies |
 
 Both implementations conform to the shared [DESIGN.md](docs/DESIGN.md) specification. They are independent codebases targeting the same formal model.
@@ -62,7 +62,8 @@ Reflex implements a pushdown automaton with append-only tape — equivalent to a
 ## Documentation
 
 - [DESIGN.md](docs/DESIGN.md) — Formal model, core types, runtime architecture, extension points, boundaries
-- [ROADMAP-v1.md](docs/ROADMAP-v1.md) — V1.0 roadmap (4 milestones, 12 issues: declarative workflows, node contracts, persistence, API stabilization)
+- [MIGRATION-v1.md](docs/MIGRATION-v1.md) — Upgrade guide from v0.x to v1.0
+- [ROADMAP-v1.md](docs/ROADMAP-v1.md) — V1.0 roadmap (4 milestones, 12 issues) — completed
 - [ROADMAP-v-alpha.md](docs/ROADMAP-v-alpha.md) — V-alpha implementation plan (6 milestones, 24 issues) — completed
 
 ## License
