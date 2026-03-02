@@ -140,15 +140,46 @@ Create an engine bound to a registry and decision agent.
 
 **Decision agent** — `DecisionAgent`, `DecisionContext`, `Decision`, `BlackboardReader`, `BlackboardWrite`, `BlackboardEntry`, `BlackboardSource`
 
+**Cursor API** — `Cursor`, `CursorReader`
+
 **Engine results** — `StepResult`, `RunResult`, `EngineEvent`, `EngineStatus`, `EventHandler`, `StackFrame`
 
 **Errors** — `WorkflowValidationError`, `ValidationErrorCode`, `EngineError`
 
 See [DESIGN.md](../docs/DESIGN.md) for complete type definitions and semantics.
 
+## Streaming Persistence
+
+Use `currentBlackboard()` with cursors for efficient incremental persistence.
+Only new entries since the last read are returned — no duplicates, no re-scanning.
+
+```typescript
+const engine = createEngine(registry, agent);
+await engine.init('my-workflow');
+
+// Start cursor at position 0
+let cur = engine.currentBlackboard()!.cursor();
+
+while (true) {
+  const result = await engine.step();
+
+  // Read only entries added since last step
+  const [entries, next] = engine.currentBlackboard()!.entriesFrom(cur);
+  for (const e of entries) {
+    // Append to NDJSON log, database, etc.
+    console.log(`${e.key} = ${e.value} (from ${e.source.nodeId})`);
+  }
+  cur = next;
+
+  if (result.status === 'completed') break;
+}
+```
+
+**`blackboard()` vs `currentBlackboard()`**: `blackboard()` returns a `BlackboardReader` that walks the full scope chain (local → parent → grandparent). `currentBlackboard()` returns a `CursorReader` for the current workflow's blackboard. Use `blackboard()` in agents for scoped reads; use `currentBlackboard()` in persistence layers for incremental writes.
+
 ## Status
 
-**v0.3.0** — 284 tests passing. ESM + CJS dual output.
+**v0.6.0** — 377 tests passing. ESM + CJS dual output.
 
 ## Documentation
 
@@ -160,6 +191,12 @@ See [DESIGN.md](../docs/DESIGN.md) for complete type definitions and semantics.
 MIT — see [LICENSE](../LICENSE)
 
 ## Changelog
+
+**v0.6.0** — Cursor API for streaming persistence: `Cursor` type, `CursorReader` interface, `ScopedBlackboard.cursor()` and `entriesFrom()`, `engine.currentBlackboard()` returning read-only `CursorReader`. 377 tests.
+
+**v0.5.0** — Persistence: `engine.snapshot()` for serializable state capture, `restoreEngine()` for hydration from snapshots, `PersistenceAdapter` interface. 364 tests.
+
+**v0.4.0** — Custom guards: `GuardRegistry` for user-defined guard functions, `filterEdges()` with pluggable evaluation. 320 tests.
 
 **v0.3.0** — Declarative workflows: JSON schema definition, `loadWorkflow()` for loading workflows from JSON, `serializeWorkflow()` for round-trip serialization. Custom guard registry, cross-implementation fixture validation. 284 tests.
 
