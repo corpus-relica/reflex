@@ -281,6 +281,18 @@ export class ReflexEngine {
 
     // -- Handle suspend -----------------------------------------------------
     if (decision.type === 'suspend') {
+      if (decision.writes && decision.writes.length > 0) {
+        const source: BlackboardSource = {
+          workflowId: this._currentWorkflowId,
+          nodeId: this._currentNodeId,
+          stackDepth: this._stack.length,
+        };
+        const newEntries = this._currentBlackboard.append(
+          decision.writes,
+          source,
+        );
+        this._emit('blackboard:write', { entries: newEntries, workflow });
+      }
       this._status = 'suspended';
       this._emit('engine:suspend', {
         reason: decision.reason,

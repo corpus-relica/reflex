@@ -564,6 +564,67 @@ describe('ReflexEngine', () => {
         'awaiting input',
       );
     });
+
+    it('persists writes to blackboard when suspending with writes', async () => {
+      registry.register(linearWorkflow());
+      const resolveFn = vi
+        .fn()
+        .mockResolvedValueOnce({
+          type: 'suspend',
+          reason: 'rate limit',
+          writes: [
+            { key: 'progress', value: 25 },
+            { key: 'status', value: 'processing' },
+          ],
+        });
+      const engine = new ReflexEngine(registry, makeAgent(resolveFn));
+
+      await engine.init('linear');
+      const result = await engine.step();
+
+      expect(result.status).toBe('suspended');
+      expect(engine.blackboard().get('progress')).toBe(25);
+      expect(engine.blackboard().get('status')).toBe('processing');
+    });
+
+    it('emits blackboard:write event before engine:suspend when writes present', async () => {
+      registry.register(linearWorkflow());
+      const resolveFn = vi.fn().mockResolvedValueOnce({
+        type: 'suspend',
+        reason: 'test',
+        writes: [{ key: 'k', value: 'v' }],
+      });
+      const engine = new ReflexEngine(registry, makeAgent(resolveFn));
+
+      const events: string[] = [];
+      engine.on('blackboard:write', () => events.push('blackboard:write'));
+      engine.on('engine:suspend', () => events.push('engine:suspend'));
+
+      await engine.init('linear');
+      await engine.step();
+
+      expect(events).toEqual(['blackboard:write', 'engine:suspend']);
+    });
+
+    it('suspend writes are still visible on blackboard after resume and advance', async () => {
+      registry.register(linearWorkflow());
+      const resolveFn = vi
+        .fn()
+        .mockResolvedValueOnce({
+          type: 'suspend',
+          reason: 'rate limit',
+          writes: [{ key: 'progress', value: 25 }],
+        })
+        .mockResolvedValueOnce({ type: 'advance', edge: 'e-ab' });
+      const engine = new ReflexEngine(registry, makeAgent(resolveFn));
+
+      await engine.init('linear');
+      await engine.step(); // suspend with writes
+      await engine.step(); // resume → advance
+
+      expect(engine.status()).toBe('running');
+      expect(engine.blackboard().get('progress')).toBe(25);
+    });
   });
 
   // -----------------------------------------------------------------------

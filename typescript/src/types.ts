@@ -201,7 +201,7 @@ export interface DecisionContext {
 
 export type Decision =
   | { type: 'advance'; edge: string; writes?: BlackboardWrite[] }
-  | { type: 'suspend'; reason: string }
+  | { type: 'suspend'; reason: string; writes?: BlackboardWrite[] }
   | { type: 'complete'; writes?: BlackboardWrite[] };
 
 export interface DecisionAgent {
