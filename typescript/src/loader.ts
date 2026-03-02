@@ -21,10 +21,10 @@ import { workflowSchema } from './workflow-schema.js';
 // Public types
 // ---------------------------------------------------------------------------
 
-// Re-export GuardRegistry from types.ts for backward compatibility
-export type { GuardRegistry } from './types.js';
-
-/** Options for loadWorkflow. */
+/**
+ * Options for {@link loadWorkflow}. Provide a {@link GuardRegistry} to
+ * resolve named custom guards in JSON workflow definitions.
+ */
 export interface LoadWorkflowOptions {
   guards?: GuardRegistry;
 }
