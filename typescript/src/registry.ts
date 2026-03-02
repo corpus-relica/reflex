@@ -7,6 +7,21 @@ import { Workflow } from './types.js';
 // Validation Error
 // ---------------------------------------------------------------------------
 
+/**
+ * Discriminant codes for {@link WorkflowValidationError}. Consumers can
+ * branch on `.code` to handle specific structural errors.
+ *
+ * - `CYCLE_DETECTED` — workflow graph contains a cycle.
+ * - `INVALID_EDGE` — edge references a non-existent node.
+ * - `INVALID_ENTRY_NODE` — entry node not found in nodes map.
+ * - `NO_TERMINAL_NODES` — every node has outgoing edges (no exit point).
+ * - `DUPLICATE_WORKFLOW_ID` — workflow ID already registered.
+ * - `NODE_ID_MISMATCH` — node dict key doesn't match node.id.
+ * - `EMPTY_WORKFLOW` — workflow has no nodes.
+ * - `SCHEMA_VIOLATION` — JSON workflow fails schema validation (via loadWorkflow).
+ * - `UNKNOWN_GUARD_REFERENCE` — JSON workflow references an unregistered guard name.
+ * - `WORKFLOW_NOT_FOUND` — workflow not registered (used by verify()).
+ */
 export type ValidationErrorCode =
   | 'CYCLE_DETECTED'
   | 'INVALID_EDGE'
@@ -23,10 +38,17 @@ export type ValidationErrorCode =
 // Verification Types (M8-2: Static Verification)
 // ---------------------------------------------------------------------------
 
+/**
+ * Warning codes from {@link WorkflowRegistry.verify | verify()} static analysis.
+ *
+ * - `MISSING_REQUIRED_INPUT` — a node declares a required input that no upstream node produces.
+ * - `RETURNMAP_KEY_NOT_IN_CHILD_OUTPUTS` — a returnMap references a child key not declared in terminal outputs.
+ */
 export type VerificationWarningCode =
   | 'MISSING_REQUIRED_INPUT'
   | 'RETURNMAP_KEY_NOT_IN_CHILD_OUTPUTS';
 
+/** A single warning from static verification of node contracts. */
 export interface VerificationWarning {
   code: VerificationWarningCode;
   workflowId: string;
@@ -35,12 +57,18 @@ export interface VerificationWarning {
   message: string;
 }
 
+/** Result of {@link WorkflowRegistry.verify | verify()} — valid if no warnings. */
 export interface VerificationResult {
   workflowId: string;
   valid: boolean;
   warnings: VerificationWarning[];
 }
 
+/**
+ * Thrown by {@link WorkflowRegistry.register | register()} and
+ * {@link loadWorkflow} for structural problems in workflow definitions.
+ * Use `.code` to distinguish error types programmatically.
+ */
 export class WorkflowValidationError extends Error {
   public readonly code: ValidationErrorCode;
   public readonly workflowId: string;
@@ -64,6 +92,11 @@ export class WorkflowValidationError extends Error {
 // Workflow Registry
 // ---------------------------------------------------------------------------
 
+/**
+ * Registry of validated workflow definitions. Workflows are validated for
+ * structural correctness (DAG, edges, entry/terminal nodes) at registration
+ * time. Use {@link createRegistry} for construction.
+ */
 export class WorkflowRegistry {
   private readonly workflows = new Map<string, Workflow>();
 
@@ -85,14 +118,17 @@ export class WorkflowRegistry {
     this.workflows.set(workflow.id, workflow);
   }
 
+  /** Returns the workflow with the given ID, or `undefined` if not registered. */
   get(id: string): Workflow | undefined {
     return this.workflows.get(id);
   }
 
+  /** Returns `true` if a workflow with the given ID is registered. */
   has(id: string): boolean {
     return this.workflows.has(id);
   }
 
+  /** Returns all registered workflow IDs. */
   list(): string[] {
     return Array.from(this.workflows.keys());
   }

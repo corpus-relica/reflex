@@ -8,15 +8,25 @@ import type { DecisionAgent } from './types.js';
 // Factory functions
 // ---------------------------------------------------------------------------
 
-/** Options for engine creation. Reserved for future extension. */
+/**
+ * Options for {@link createEngine}. Currently empty — reserved for future
+ * extension (e.g., concurrency limits, logging configuration).
+ */
 export interface EngineOptions {}
 
-/** Create a WorkflowRegistry. Register workflows before creating an engine. */
+/**
+ * Create a {@link WorkflowRegistry}. Register workflows with
+ * {@link WorkflowRegistry.register | registry.register()} before passing
+ * the registry to {@link createEngine}.
+ */
 export function createRegistry(): WorkflowRegistry {
   return new WorkflowRegistry();
 }
 
-/** Create a ReflexEngine bound to a registry and decision agent. */
+/**
+ * Create a {@link ReflexEngine} bound to a registry and decision agent.
+ * Call {@link ReflexEngine.init | engine.init()} to start a session.
+ */
 export function createEngine(
   registry: WorkflowRegistry,
   agent: DecisionAgent,
@@ -85,6 +95,7 @@ export { EngineError } from './engine.js';
 
 export { loadWorkflow } from './loader.js';
 export type { LoadWorkflowOptions } from './loader.js';
+export { workflowSchema } from './workflow-schema.js';
 
 // ---------------------------------------------------------------------------
 // Serializer (M7-3: Declarative Workflows)

@@ -35,6 +35,12 @@ import { filterEdges } from './guards.js';
 // Engine Error
 // ---------------------------------------------------------------------------
 
+/**
+ * Thrown by the engine for structural and pre-condition violations (e.g.,
+ * calling step() before init(), missing workflows). Distinct from the
+ * `engine:error` event, which is emitted for runtime failures like guard
+ * evaluation errors or agent exceptions — those do not throw.
+ */
 export class EngineError extends Error {
   constructor(message: string) {
     super(message);
@@ -46,6 +52,13 @@ export class EngineError extends Error {
 // ReflexEngine
 // ---------------------------------------------------------------------------
 
+/**
+ * The Reflex execution engine. Lifecycle: construct → {@link init} →
+ * {@link step}/{@link run} → {@link snapshot} (optional).
+ *
+ * Use {@link createEngine} for construction. The engine is bound to a
+ * single registry and decision agent for its lifetime.
+ */
 export class ReflexEngine {
   private readonly _registry: WorkflowRegistry;
   private readonly _agent: DecisionAgent;
@@ -103,6 +116,14 @@ export class ReflexEngine {
   // Lifecycle
   // -------------------------------------------------------------------------
 
+  /**
+   * Initialize a new execution session for the given workflow. Must be
+   * called before step() or run(). Optionally seeds the root blackboard.
+   * Emits `node:enter` for the entry node.
+   *
+   * @returns The generated session ID (UUID v4).
+   * @throws {EngineError} If the workflow is not registered.
+   */
   async init(workflowId: string, options?: InitOptions): Promise<string> {
     const workflow = this._registry.get(workflowId);
     if (!workflow) {
@@ -139,6 +160,12 @@ export class ReflexEngine {
     return this._sessionId;
   }
 
+  /**
+   * Execute a single iteration of the engine loop. Handles invocation,
+   * guard evaluation, agent resolution, and stack operations.
+   *
+   * @throws {EngineError} If called before init() or in an invalid state.
+   */
   async step(): Promise<StepResult> {
     // -- Precondition guards ------------------------------------------------
     if (this._status !== 'running' && this._status !== 'suspended') {
@@ -379,6 +406,13 @@ export class ReflexEngine {
     return { status: 'popped', workflow: parentWorkflow, node: invokingNode };
   }
 
+  /**
+   * Step repeatedly until the engine completes, suspends, or errors.
+   * Errors from step() are caught and returned as `{ status: 'error' }`
+   * rather than thrown.
+   *
+   * @throws {EngineError} If called before init() or in an invalid state.
+   */
   async run(): Promise<RunResult> {
     // -- Precondition guards ------------------------------------------------
     if (this._status !== 'running' && this._status !== 'suspended') {
@@ -436,10 +470,15 @@ export class ReflexEngine {
   // State Inspection
   // -------------------------------------------------------------------------
 
+  /** Returns the current engine lifecycle state. */
   status(): EngineStatus {
     return this._status;
   }
 
+  /**
+   * Returns the session ID assigned during init().
+   * @throws {EngineError} If called before init().
+   */
   sessionId(): string {
     if (this._sessionId === null) {
       throw new EngineError('Engine not initialized — call init() first');
@@ -447,6 +486,7 @@ export class ReflexEngine {
     return this._sessionId;
   }
 
+  /** Returns the current node, or `null` before init(). */
   currentNode(): Node | null {
     if (this._currentWorkflowId === null || this._currentNodeId === null) {
       return null;
@@ -456,6 +496,7 @@ export class ReflexEngine {
     return workflow.nodes[this._currentNodeId] ?? null;
   }
 
+  /** Returns the current workflow, or `null` before init(). */
   currentWorkflow(): Workflow | null {
     if (this._currentWorkflowId === null) return null;
     return this._registry.get(this._currentWorkflowId) ?? null;
@@ -475,6 +516,12 @@ export class ReflexEngine {
     return this._currentBlackboard;
   }
 
+  /**
+   * Returns a scoped blackboard reader that walks the full call stack
+   * (local → parent → grandparent). Use this in decision agents for
+   * context-sensitive reads. For cursor-based incremental reads, use
+   * {@link currentBlackboard} instead.
+   */
   blackboard(): BlackboardReader {
     if (this._currentBlackboard === null) {
       return new ScopedBlackboardReader([]);
@@ -485,10 +532,16 @@ export class ReflexEngine {
     return this._currentBlackboard.reader(parentScopes);
   }
 
+  /** Returns a snapshot copy of the call stack. Index 0 is the most-recent parent. */
   stack(): ReadonlyArray<StackFrame> {
     return [...this._stack];
   }
 
+  /**
+   * Re-evaluates guards and returns currently valid outgoing edges for
+   * the current node. Returns `[]` if no session is active or on error.
+   * This is a read-only inspector — guard errors are not emitted as events.
+   */
   validEdges(): Edge[] {
     const workflow = this.currentWorkflow();
     if (!workflow || this._currentNodeId === null) return [];
@@ -509,6 +562,12 @@ export class ReflexEngine {
   // Persistence — Snapshot (M9-1)
   // -------------------------------------------------------------------------
 
+  /**
+   * Capture a JSON-serializable snapshot of the current engine state.
+   * Use with {@link restoreEngine} for persistence and session recovery.
+   *
+   * @throws {EngineError} If called before init().
+   */
   snapshot(): EngineSnapshot {
     if (
       this._sessionId === null ||
@@ -544,6 +603,11 @@ export class ReflexEngine {
   // Events
   // -------------------------------------------------------------------------
 
+  /**
+   * Register an event handler. Multiple handlers per event accumulate.
+   * There is no deregistration mechanism — handlers persist for the
+   * engine's lifetime.
+   */
   on(event: EngineEvent, handler: EventHandler): void {
     const handlers = this._handlers.get(event) ?? [];
     handlers.push(handler);

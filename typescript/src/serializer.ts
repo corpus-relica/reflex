@@ -16,13 +16,21 @@ import { WorkflowValidationError } from './registry.js';
 // Public types
 // ---------------------------------------------------------------------------
 
-/** Maps evaluate functions back to guard names for serialization. */
+/**
+ * Reverse mapping from custom guard evaluate functions to their JSON names.
+ * This is the inverse of {@link GuardRegistry} — used by
+ * {@link serializeWorkflow} to recover `{ type: "custom", name: "..." }`
+ * from live guard functions.
+ */
 export type GuardNameMap = Map<
   (blackboard: BlackboardReader) => boolean,
   string
 >;
 
-/** Options for serializeWorkflow. */
+/**
+ * Options for {@link serializeWorkflow}. Provide a {@link GuardNameMap}
+ * to serialize custom guards back to their named JSON representation.
+ */
 export interface SerializeWorkflowOptions {
   guardNames?: GuardNameMap;
 }
