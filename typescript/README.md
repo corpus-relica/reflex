@@ -179,7 +179,7 @@ while (true) {
 
 ## Status
 
-**v1.0.0** — 380 tests passing. ESM + CJS dual output. Stable public API.
+**v1.1.0** — 396 tests passing. ESM + CJS dual output. Stable public API.
 
 ## Documentation
 
@@ -192,6 +192,8 @@ while (true) {
 MIT — see [LICENSE](../LICENSE)
 
 ## Changelog
+
+**v1.1.0** — `engine.unwindToDepth(n)`: multi-level stack unwinding primitive. Discards all stack frames above depth N without processing returnMaps, agent callbacks, or events. Designed for breadcrumb-style navigation in dialogue systems. Only callable when suspended; `n === stack.length` is a no-op. 396 tests.
 
 **v1.0.0** — First stable release. Public API locked — breaking changes require a major version bump. All M7–M10 milestones complete: declarative workflows (`loadWorkflow`, `serializeWorkflow`, JSON Schema), node contracts (`inputs`/`outputs` on nodes, `registry.verify()`), persistence (`engine.snapshot()`, `restoreEngine()`), cursor API (`currentBlackboard()`, `entriesFrom()`). JSDoc on all public symbols. 380 tests. See [MIGRATION-v1.md](../docs/MIGRATION-v1.md) for the upgrade guide.
 
