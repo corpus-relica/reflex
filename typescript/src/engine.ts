@@ -600,6 +600,70 @@ export class ReflexEngine {
   }
 
   // -------------------------------------------------------------------------
+  // Stack Unwinding
+  // -------------------------------------------------------------------------
+
+  /**
+   * Discard all stack frames above depth `n` without processing returnMaps
+   * or consulting the decision agent. Frames evaporate cleanly.
+   *
+   * `n` is the target depth from the bottom of the stack (root = 0).
+   * After the call, `engine.stack().length === n`. If `n` equals the
+   * current stack depth, this is a no-op.
+   *
+   * The engine remains in `suspended` state after unwind — call
+   * {@link run} or {@link step} to resume execution at the target node.
+   *
+   * @throws {EngineError} If called before init(), not in `suspended`
+   *   state, or `n` is out of range.
+   */
+  unwindToDepth(n: number): void {
+    if (
+      this._sessionId === null ||
+      this._currentWorkflowId === null ||
+      this._currentNodeId === null ||
+      this._currentBlackboard === null
+    ) {
+      throw new EngineError('unwindToDepth() called before init()');
+    }
+    if (this._status !== 'suspended') {
+      throw new EngineError(
+        `unwindToDepth() requires engine to be suspended, but status is '${this._status}'`,
+      );
+    }
+    if (n < 0 || n > this._stack.length) {
+      throw new EngineError(
+        `unwindToDepth(${n}) out of range — valid range is 0..${this._stack.length}`,
+      );
+    }
+
+    // No-op: already at target depth
+    if (n === this._stack.length) {
+      return;
+    }
+
+    // Target frame is at array index (stack.length - 1 - n).
+    // Stack layout: index 0 = most-recent parent, last index = root.
+    const targetIdx = this._stack.length - 1 - n;
+    const targetFrame = this._stack[targetIdx];
+
+    // Restore target frame as active context.
+    // Reconstruct blackboard from frozen snapshot (mirrors pop path).
+    this._currentWorkflowId = targetFrame.workflowId;
+    this._currentNodeId = targetFrame.currentNodeId;
+    this._currentBlackboard = new ScopedBlackboard(
+      targetFrame.blackboard.map((e) => ({ ...e })),
+    );
+
+    // Keep only frames below the target (the target's ancestors).
+    this._stack = this._stack.slice(targetIdx + 1);
+
+    // The target node is an invocation node (frames are only pushed at
+    // invocation nodes). Skip re-triggering the sub-workflow on resume.
+    this._skipInvocation = true;
+  }
+
+  // -------------------------------------------------------------------------
   // Events
   // -------------------------------------------------------------------------
 
