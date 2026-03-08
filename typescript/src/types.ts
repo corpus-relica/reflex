@@ -365,10 +365,24 @@ export type EngineEvent =
   | 'edge:traverse'
   | 'workflow:push'
   | 'workflow:pop'
+  | 'stack:unwind'
   | 'blackboard:write'
   | 'engine:complete'
   | 'engine:suspend'
   | 'engine:error';
+
+/**
+ * Payload for the `stack:unwind` event, emitted by
+ * {@link ReflexEngine.unwindToDepth | engine.unwindToDepth()}.
+ * Contains the discarded frames and the restored execution context.
+ */
+export interface UnwindEvent {
+  discardedFrames: StackFrame[];
+  targetDepth: number;
+  restoredWorkflow: Workflow;
+  restoredNode: Node;
+  reinvoke: boolean;
+}
 
 // ---------------------------------------------------------------------------
 // 3.2 Execution Engine — EngineStatus, RunResult, EventHandler

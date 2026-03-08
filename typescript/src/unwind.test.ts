@@ -192,14 +192,100 @@ describe('unwindToDepth', () => {
   });
 
   // -------------------------------------------------------------------------
-  // No events emitted
+  // stack:unwind event
   // -------------------------------------------------------------------------
 
-  describe('no events emitted', () => {
-    it('does not emit any events during unwind', async () => {
+  describe('stack:unwind event', () => {
+    it('emits exactly one stack:unwind event on real unwind', async () => {
       const { engine } = await setupSuspendedAtDepth3();
 
-      const allEvents: EngineEvent[] = [
+      const payloads: unknown[] = [];
+      engine.on('stack:unwind', (p) => payloads.push(p));
+
+      engine.unwindToDepth(0);
+
+      expect(payloads).toHaveLength(1);
+    });
+
+    it('does not emit stack:unwind on no-op (n === stack.length)', async () => {
+      const { engine } = await setupSuspendedAtDepth3();
+
+      const payloads: unknown[] = [];
+      engine.on('stack:unwind', (p) => payloads.push(p));
+
+      engine.unwindToDepth(2); // stack.length is 2 — no-op
+
+      expect(payloads).toHaveLength(0);
+    });
+
+    it('payload has correct targetDepth', async () => {
+      const { engine } = await setupSuspendedAtDepth3();
+
+      let payload: any;
+      engine.on('stack:unwind', (p) => { payload = p; });
+
+      engine.unwindToDepth(1);
+
+      expect(payload.targetDepth).toBe(1);
+    });
+
+    it('payload discardedFrames includes active frame and intermediate frames', async () => {
+      const { engine } = await setupSuspendedAtDepth3();
+
+      let payload: any;
+      engine.on('stack:unwind', (p) => { payload = p; });
+
+      // Unwind from depth 2 (deep active, stack=[mid, gp]) to depth 0
+      // Discarded: active (deep) + mid frame = 2 frames
+      engine.unwindToDepth(0);
+
+      expect(payload.discardedFrames).toHaveLength(2);
+      // Active frame (deep) comes first
+      expect(payload.discardedFrames[0].workflowId).toBe('deep');
+      expect(payload.discardedFrames[0].currentNodeId).toBe('DEEP_INIT');
+      // Then the mid frame
+      expect(payload.discardedFrames[1].workflowId).toBe('mid');
+      expect(payload.discardedFrames[1].currentNodeId).toBe('MID_INVOKE');
+    });
+
+    it('payload has correct restoredWorkflow and restoredNode', async () => {
+      const { engine } = await setupSuspendedAtDepth3();
+
+      let payload: any;
+      engine.on('stack:unwind', (p) => { payload = p; });
+
+      engine.unwindToDepth(1);
+
+      expect(payload.restoredWorkflow.id).toBe('mid');
+      expect(payload.restoredNode.id).toBe('MID_INVOKE');
+    });
+
+    it('payload reinvoke is false by default', async () => {
+      const { engine } = await setupSuspendedAtDepth3();
+
+      let payload: any;
+      engine.on('stack:unwind', (p) => { payload = p; });
+
+      engine.unwindToDepth(1);
+
+      expect(payload.reinvoke).toBe(false);
+    });
+
+    it('payload reinvoke is true when { reinvoke: true } passed', async () => {
+      const { engine } = await setupSuspendedAtDepth3();
+
+      let payload: any;
+      engine.on('stack:unwind', (p) => { payload = p; });
+
+      engine.unwindToDepth(1, { reinvoke: true });
+
+      expect(payload.reinvoke).toBe(true);
+    });
+
+    it('does not emit workflow:pop, node:enter, or node:exit during unwind', async () => {
+      const { engine } = await setupSuspendedAtDepth3();
+
+      const otherEvents: EngineEvent[] = [
         'node:enter',
         'node:exit',
         'edge:traverse',
@@ -211,7 +297,7 @@ describe('unwindToDepth', () => {
         'engine:error',
       ];
       const fired: EngineEvent[] = [];
-      for (const evt of allEvents) {
+      for (const evt of otherEvents) {
         engine.on(evt, () => fired.push(evt));
       }
 
