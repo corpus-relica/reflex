@@ -25,6 +25,7 @@ import {
   EngineStatus,
   EngineSnapshot,
   InitOptions,
+  UnwindOptions,
   CursorReader,
 } from './types.js';
 import { WorkflowRegistry } from './registry.js';
@@ -614,10 +615,14 @@ export class ReflexEngine {
    * The engine remains in `suspended` state after unwind — call
    * {@link run} or {@link step} to resume execution at the target node.
    *
+   * @param options.reinvoke — When `true`, the restored frame's invocation
+   *   node will re-trigger its sub-workflow on the next step() rather than
+   *   advancing past it. Defaults to `false`.
+   *
    * @throws {EngineError} If called before init(), not in `suspended`
    *   state, or `n` is out of range.
    */
-  unwindToDepth(n: number): void {
+  unwindToDepth(n: number, options?: UnwindOptions): void {
     if (
       this._sessionId === null ||
       this._currentWorkflowId === null ||
@@ -659,8 +664,9 @@ export class ReflexEngine {
     this._stack = this._stack.slice(targetIdx + 1);
 
     // The target node is an invocation node (frames are only pushed at
-    // invocation nodes). Skip re-triggering the sub-workflow on resume.
-    this._skipInvocation = true;
+    // invocation nodes). By default, skip re-triggering the sub-workflow
+    // on resume. When reinvoke is true, allow re-invocation instead.
+    this._skipInvocation = options?.reinvoke !== true;
   }
 
   // -------------------------------------------------------------------------

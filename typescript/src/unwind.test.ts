@@ -401,4 +401,59 @@ describe('unwindToDepth', () => {
       expect(snap.skipInvocation).toBe(true);
     });
   });
+
+  // -------------------------------------------------------------------------
+  // reinvoke option
+  // -------------------------------------------------------------------------
+
+  describe('reinvoke option', () => {
+    it('{ reinvoke: false } behaves like default — skipInvocation is true', async () => {
+      const { engine } = await setupSuspendedAtDepth3();
+
+      engine.unwindToDepth(1, { reinvoke: false });
+
+      const snap = engine.snapshot();
+      expect(snap.skipInvocation).toBe(true);
+    });
+
+    it('{ reinvoke: true } sets skipInvocation to false in snapshot', async () => {
+      const { engine } = await setupSuspendedAtDepth3();
+
+      engine.unwindToDepth(1, { reinvoke: true });
+
+      const snap = engine.snapshot();
+      expect(snap.skipInvocation).toBe(false);
+    });
+
+    it('{ reinvoke: true } causes re-invocation on next step()', async () => {
+      const { engine, resolveFn } = await setupSuspendedAtDepth3();
+
+      engine.unwindToDepth(1, { reinvoke: true });
+
+      // mid is now active at MID_INVOKE. With reinvoke, step() should
+      // re-invoke the 'deep' sub-workflow instead of consulting the agent.
+      const result = await engine.step();
+
+      expect(result.status).toBe('invoked');
+      expect(engine.currentWorkflow()!.id).toBe('deep');
+      expect(engine.currentNode()!.id).toBe('DEEP_INIT');
+      // Agent was called 3 times during setup, NOT called during re-invocation
+      expect(resolveFn).toHaveBeenCalledTimes(3);
+    });
+
+    it('no-op path with { reinvoke: true } does not alter skipInvocation', async () => {
+      const { engine } = await setupSuspendedAtDepth3();
+
+      // Capture current skipInvocation via snapshot before the no-op
+      const snapBefore = engine.snapshot();
+
+      // n === stack.length (2) is a no-op
+      engine.unwindToDepth(2, { reinvoke: true });
+
+      const snapAfter = engine.snapshot();
+      expect(snapAfter.skipInvocation).toBe(snapBefore.skipInvocation);
+      expect(engine.currentWorkflow()!.id).toBe('deep');
+      expect(engine.currentNode()!.id).toBe('DEEP_INIT');
+    });
+  });
 });

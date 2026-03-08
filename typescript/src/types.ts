@@ -208,6 +208,18 @@ export interface InitOptions {
   blackboard?: BlackboardWrite[];
 }
 
+/**
+ * Options for {@link ReflexEngine.unwindToDepth | engine.unwindToDepth()}.
+ *
+ * `reinvoke`: when `true`, the restored frame's invocation node will
+ * re-trigger its sub-workflow on the next step() instead of running
+ * normal edge logic. Defaults to `false` (skip re-invocation, advance
+ * past the invocation node).
+ */
+export interface UnwindOptions {
+  reinvoke?: boolean;
+}
+
 // ---------------------------------------------------------------------------
 // 2.9 Call Stack
 // ---------------------------------------------------------------------------
