@@ -66,6 +66,7 @@ export type {
   EventHandler,
   InitOptions,
   UnwindOptions,
+  UnwindEvent,
   EngineSnapshot,
   GuardRegistry,
   RestoreOptions,

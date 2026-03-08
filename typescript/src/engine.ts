@@ -26,6 +26,7 @@ import {
   EngineSnapshot,
   InitOptions,
   UnwindOptions,
+  UnwindEvent,
   CursorReader,
 } from './types.js';
 import { WorkflowRegistry } from './registry.js';
@@ -652,6 +653,21 @@ export class ReflexEngine {
     const targetIdx = this._stack.length - 1 - n;
     const targetFrame = this._stack[targetIdx];
 
+    // Capture frames to discard BEFORE mutating state.
+    // Build a synthetic StackFrame for the active layer (not on _stack).
+    const activeFrameSnapshot: StackFrame = {
+      workflowId: this._currentWorkflowId,
+      currentNodeId: this._currentNodeId,
+      returnMap: [],
+      blackboard: [
+        ...this._currentBlackboard.getEntries(),
+      ] as BlackboardEntry[],
+    };
+    const discardedFrames = [
+      activeFrameSnapshot,
+      ...this._stack.slice(0, targetIdx),
+    ];
+
     // Restore target frame as active context.
     // Reconstruct blackboard from frozen snapshot (mirrors pop path).
     this._currentWorkflowId = targetFrame.workflowId;
@@ -666,7 +682,19 @@ export class ReflexEngine {
     // The target node is an invocation node (frames are only pushed at
     // invocation nodes). By default, skip re-triggering the sub-workflow
     // on resume. When reinvoke is true, allow re-invocation instead.
-    this._skipInvocation = options?.reinvoke !== true;
+    const reinvoke = options?.reinvoke === true;
+    this._skipInvocation = !reinvoke;
+
+    // Emit stack:unwind so listeners (devtools, logging) can stay in sync.
+    const restoredWorkflow = this._registry.get(this._currentWorkflowId)!;
+    const restoredNode = restoredWorkflow.nodes[this._currentNodeId]!;
+    this._emit('stack:unwind', {
+      discardedFrames,
+      targetDepth: n,
+      restoredWorkflow,
+      restoredNode,
+      reinvoke,
+    } satisfies UnwindEvent);
   }
 
   // -------------------------------------------------------------------------
