@@ -179,7 +179,7 @@ while (true) {
 
 ## Status
 
-**v1.1.0** — 396 tests passing. ESM + CJS dual output. Stable public API.
+**v1.2.0** — 400 tests passing. ESM + CJS dual output. Stable public API.
 
 ## Documentation
 
@@ -192,6 +192,8 @@ while (true) {
 MIT — see [LICENSE](../LICENSE)
 
 ## Changelog
+
+**v1.2.0** — `unwindToDepth(n, { reinvoke: true })`: optional reinvoke flag causes the restored invocation node to re-trigger its sub-workflow instead of advancing past it. Backward compatible. 400 tests.
 
 **v1.1.0** — `engine.unwindToDepth(n)`: multi-level stack unwinding primitive. Discards all stack frames above depth N without processing returnMaps, agent callbacks, or events. Designed for breadcrumb-style navigation in dialogue systems. Only callable when suspended; `n === stack.length` is a no-op. 396 tests.
 
