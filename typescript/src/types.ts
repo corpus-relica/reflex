@@ -30,6 +30,34 @@ export interface ReturnMapping {
 }
 
 // ---------------------------------------------------------------------------
+// 2.14 InputMapping (imperative push/pop)
+// ---------------------------------------------------------------------------
+
+/**
+ * Maps a parent blackboard key to a child blackboard key at push time.
+ * Used by {@link ReflexEngine.pushWorkflow | pushWorkflow()} to seed the
+ * child workflow's local blackboard with values from the parent scope.
+ *
+ * This is the inverse of {@link ReturnMapping}: values flow down via
+ * inputMap at push time, and up via returnMap at pop time.
+ */
+export interface InputMapping {
+  from: string;
+  to: string;
+}
+
+/**
+ * Options for {@link ReflexEngine.pushWorkflow | pushWorkflow()}.
+ *
+ * Both fields are optional — a bare `pushWorkflow(id)` call pushes
+ * with no input seeding and no return propagation.
+ */
+export interface PushWorkflowOptions {
+  returnMap?: ReturnMapping[];
+  inputMap?: InputMapping[];
+}
+
+// ---------------------------------------------------------------------------
 // 2.4 InvocationSpec
 // ---------------------------------------------------------------------------
 
