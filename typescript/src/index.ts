@@ -67,6 +67,8 @@ export type {
   InitOptions,
   UnwindOptions,
   UnwindEvent,
+  InputMapping,
+  PushWorkflowOptions,
   EngineSnapshot,
   GuardRegistry,
   RestoreOptions,

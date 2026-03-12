@@ -28,6 +28,7 @@ import {
   UnwindOptions,
   UnwindEvent,
   CursorReader,
+  PushWorkflowOptions,
 } from './types.js';
 import { WorkflowRegistry } from './registry.js';
 import { ScopedBlackboard, ScopedBlackboardReader } from './blackboard.js';
@@ -695,6 +696,184 @@ export class ReflexEngine {
       restoredNode,
       reinvoke,
     } satisfies UnwindEvent);
+  }
+
+  // -------------------------------------------------------------------------
+  // Imperative Push/Pop
+  // -------------------------------------------------------------------------
+
+  /**
+   * Programmatically push a sub-workflow onto the call stack. The current
+   * workflow/node/blackboard is saved in a {@link StackFrame} and the engine
+   * switches to the sub-workflow's entry node.
+   *
+   * This complements the declarative {@link InvocationSpec | node.invokes}
+   * mechanism — use it when invocation is driven by external code (e.g.,
+   * user clicks "Create New") rather than the graph structure.
+   *
+   * Note: The issue proposal describes async `Promise<StepResult>` but
+   * push/pop are synchronous — no agent resolution or async work occurs.
+   *
+   * @param options.inputMap — Seed the child blackboard with parent values
+   *   at push time. Each mapping reads `from` in the parent scope and
+   *   writes to `to` in the child's local scope (additive seeding, not
+   *   parent-key isolation).
+   * @param options.returnMap — Propagate child values back to the parent
+   *   on {@link popWorkflow}.
+   *
+   * @throws {EngineError} If called before init(), in completed/error
+   *   state, or if the workflow is not registered.
+   */
+  pushWorkflow(workflowId: string, options?: PushWorkflowOptions): StepResult {
+    // -- Precondition guards ------------------------------------------------
+    if (
+      this._currentWorkflowId === null ||
+      this._currentNodeId === null ||
+      this._currentBlackboard === null
+    ) {
+      throw new EngineError('pushWorkflow() called before init()');
+    }
+    if (this._status !== 'running' && this._status !== 'suspended') {
+      throw new EngineError(
+        `pushWorkflow() called in invalid state: '${this._status}' — engine must be 'running' or 'suspended'`,
+      );
+    }
+
+    const subWorkflow = this._registry.get(workflowId);
+    if (!subWorkflow) {
+      throw new EngineError(
+        `pushWorkflow() failed: workflow '${workflowId}' is not registered`,
+      );
+    }
+
+    // Capture parent reader BEFORE mutating the stack — needed for inputMap
+    // reads and must reflect the pre-push scope chain.
+    const parentReader = this.blackboard();
+
+    // Push current frame onto the stack
+    const frame: StackFrame = {
+      workflowId: this._currentWorkflowId,
+      currentNodeId: this._currentNodeId,
+      returnMap: options?.returnMap ?? [],
+      blackboard: [
+        ...this._currentBlackboard.getEntries(),
+      ] as BlackboardEntry[],
+    };
+    this._stack.unshift(frame);
+
+    // Switch active context to sub-workflow
+    this._currentWorkflowId = subWorkflow.id;
+    this._currentNodeId = subWorkflow.entry;
+    this._currentBlackboard = new ScopedBlackboard();
+
+    // Clear stale _skipInvocation — the consumer is intentionally pushing,
+    // so any flag left from a prior pop must not suppress declarative
+    // invocations in the child workflow.
+    this._skipInvocation = false;
+
+    // Apply inputMap: seed child blackboard with parent values
+    if (options?.inputMap && options.inputMap.length > 0) {
+      const source: BlackboardSource = {
+        workflowId: subWorkflow.id,
+        nodeId: '__push__',
+        stackDepth: this._stack.length,
+      };
+      const writes: { key: string; value: unknown }[] = [];
+      for (const mapping of options.inputMap) {
+        const value = parentReader.get(mapping.from);
+        if (value !== undefined) {
+          writes.push({ key: mapping.to, value });
+        }
+      }
+      if (writes.length > 0) {
+        const newEntries = this._currentBlackboard.append(writes, source);
+        this._emit('blackboard:write', {
+          entries: newEntries,
+          workflow: subWorkflow,
+        });
+      }
+    }
+
+    // Event order: workflow:push → node:enter (mirrors declarative push)
+    this._emit('workflow:push', { frame, workflow: subWorkflow });
+
+    const entryNode = subWorkflow.nodes[subWorkflow.entry]!;
+    this._emit('node:enter', { node: entryNode, workflow: subWorkflow });
+
+    return { status: 'invoked', workflow: subWorkflow, node: entryNode };
+  }
+
+  /**
+   * Programmatically pop the current sub-workflow off the call stack,
+   * applying the returnMap from the most recent {@link pushWorkflow} call.
+   *
+   * The engine returns to the **same node** it was at when pushWorkflow
+   * was called — no cycle issue since this is imperative, not graph-driven.
+   *
+   * @throws {EngineError} If called before init(), in completed/error
+   *   state, or if the stack is empty.
+   */
+  popWorkflow(): StepResult {
+    // -- Precondition guards ------------------------------------------------
+    if (
+      this._currentWorkflowId === null ||
+      this._currentNodeId === null ||
+      this._currentBlackboard === null
+    ) {
+      throw new EngineError('popWorkflow() called before init()');
+    }
+    if (this._status !== 'running' && this._status !== 'suspended') {
+      throw new EngineError(
+        `popWorkflow() called in invalid state: '${this._status}' — engine must be 'running' or 'suspended'`,
+      );
+    }
+    if (this._stack.length === 0) {
+      throw new EngineError(
+        'popWorkflow() called with empty stack — nothing to pop',
+      );
+    }
+
+    // Capture child state and pop frame
+    const childBlackboard = this._currentBlackboard;
+    const frame = this._stack.shift()!;
+
+    // Reconstruct parent blackboard from frozen snapshot
+    const parentBlackboard = new ScopedBlackboard(frame.blackboard);
+    const parentWorkflow = this._registry.get(frame.workflowId)!;
+    const returnSource: BlackboardSource = {
+      workflowId: frame.workflowId,
+      nodeId: frame.currentNodeId,
+      stackDepth: this._stack.length,
+    };
+
+    // Execute returnMap: copy child values → parent blackboard
+    for (const mapping of frame.returnMap) {
+      const childValue = childBlackboard.reader().get(mapping.childKey);
+      if (childValue !== undefined) {
+        const newEntries = parentBlackboard.append(
+          [{ key: mapping.parentKey, value: childValue }],
+          returnSource,
+        );
+        this._emit('blackboard:write', {
+          entries: newEntries,
+          workflow: parentWorkflow,
+        });
+      }
+    }
+
+    // Restore parent state — skip re-invocation on the next step()
+    this._currentWorkflowId = frame.workflowId;
+    this._currentNodeId = frame.currentNodeId;
+    this._currentBlackboard = parentBlackboard;
+    this._skipInvocation = true;
+
+    const invokingNode = parentWorkflow.nodes[frame.currentNodeId]!;
+
+    // Event order: workflow:pop → node:enter (mirrors automatic pop)
+    this._emit('workflow:pop', { frame, workflow: parentWorkflow });
+    this._emit('node:enter', { node: invokingNode, workflow: parentWorkflow });
+
+    return { status: 'popped', workflow: parentWorkflow, node: invokingNode };
   }
 
   // -------------------------------------------------------------------------
