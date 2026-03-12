@@ -29,9 +29,14 @@ import {
   UnwindEvent,
   CursorReader,
   PushWorkflowOptions,
+  InvocationId,
+  ExecutionRecord,
+  ExecutionRecordEvent,
+  ExecutionInvalidateEvent,
 } from './types.js';
 import { WorkflowRegistry } from './registry.js';
 import { ScopedBlackboard, ScopedBlackboardReader } from './blackboard.js';
+import { ExecutionTree } from './execution-tree.js';
 import { filterEdges } from './guards.js';
 
 // ---------------------------------------------------------------------------
@@ -81,6 +86,12 @@ export class ReflexEngine {
   // should run normal edge logic instead.
   private _skipInvocation = false;
 
+  // Execution tree — tracks child workflow invocations and their lifecycle
+  private _executionTree: ExecutionTree = new ExecutionTree();
+  // The invocation ID of the currently active execution (NOT on the stack).
+  // null at root level (no invocation) or before init().
+  private _currentInvocationId: InvocationId | null = null;
+
   // Event handlers
   private readonly _handlers: Map<EngineEvent, EventHandler[]> = new Map();
 
@@ -112,6 +123,10 @@ export class ReflexEngine {
       blackboard: frame.blackboard.map((e) => ({ ...e })),
     }));
     engine._skipInvocation = snapshot.skipInvocation;
+    engine._executionTree = snapshot.executionTree
+      ? ExecutionTree.fromState(snapshot.executionTree)
+      : new ExecutionTree();
+    engine._currentInvocationId = snapshot.currentInvocationId ?? null;
     return engine;
   }
 
@@ -141,6 +156,8 @@ export class ReflexEngine {
     this._currentBlackboard = new ScopedBlackboard();
     this._stack = [];
     this._skipInvocation = false;
+    this._executionTree = new ExecutionTree();
+    this._currentInvocationId = null;
     this._status = 'running';
     if (options?.blackboard && options.blackboard.length > 0) {
       const seedSource: BlackboardSource = {
@@ -208,6 +225,32 @@ export class ReflexEngine {
         };
       }
 
+      // -- Execution tree: prune prior invocations at this node, record new one
+      const pruned = this._executionTree.pruneForReinvoke(
+        this._currentWorkflowId,
+        this._currentNodeId,
+      );
+      if (pruned.length > 0) {
+        this._emit('execution:invalidate', {
+          invalidatedIds: pruned,
+        } satisfies ExecutionInvalidateEvent);
+      }
+      const invocationId = this._executionTree.record(
+        this._currentWorkflowId,
+        this._currentNodeId,
+        subWorkflow.id,
+        {
+          parentInvocationId: this._currentInvocationId ?? undefined,
+          returnMap: node.invokes.returnMap,
+        },
+      );
+      if (this._currentInvocationId) {
+        this._executionTree.addChildInvocation(
+          this._currentInvocationId,
+          invocationId,
+        );
+      }
+
       // Push current frame onto the stack
       const frame: StackFrame = {
         workflowId: this._currentWorkflowId,
@@ -216,18 +259,20 @@ export class ReflexEngine {
         blackboard: [
           ...this._currentBlackboard.getEntries(),
         ] as BlackboardEntry[],
+        invocationId: this._currentInvocationId ?? undefined,
       };
       this._stack.unshift(frame);
 
-      // Start sub-workflow
+      // Switch active context to sub-workflow
+      this._currentInvocationId = invocationId;
       this._currentWorkflowId = subWorkflow.id;
       this._currentNodeId = subWorkflow.entry;
       this._currentBlackboard = new ScopedBlackboard();
 
-      // Event order: workflow:push then node:enter (sub-workflow entry).
-      // DESIGN.md's "node:enter → workflow:push" describes the cross-step
-      // session sequence — the prior step's advance already emitted node:enter
-      // for the invoking node. Symmetric with pop: workflow:pop → node:enter.
+      // Event order: execution:record → workflow:push → node:enter
+      this._emit('execution:record', {
+        record: this._executionTree.get(invocationId)!,
+      } satisfies ExecutionRecordEvent);
       this._emit('workflow:push', { frame, workflow: subWorkflow });
 
       const entryNode = subWorkflow.nodes[subWorkflow.entry]!;
@@ -367,6 +412,12 @@ export class ReflexEngine {
     }
 
     // -- Stack pop: sub-workflow complete, return to parent -----------------
+
+    // Complete the current execution record before popping
+    if (this._currentInvocationId) {
+      this._executionTree.complete(this._currentInvocationId);
+    }
+
     const childBlackboard = this._currentBlackboard;
     const frame = this._stack.shift()!;
 
@@ -400,6 +451,7 @@ export class ReflexEngine {
     this._currentNodeId = frame.currentNodeId;
     this._currentBlackboard = parentBlackboard;
     this._skipInvocation = true;
+    this._currentInvocationId = frame.invocationId ?? null;
 
     const invokingNode = parentWorkflow.nodes[frame.currentNodeId]!;
 
@@ -584,7 +636,7 @@ export class ReflexEngine {
     }
 
     return {
-      version: '1',
+      version: '2',
       createdAt: new Date().toISOString(),
       sessionId: this._sessionId,
       status: this._status,
@@ -599,6 +651,8 @@ export class ReflexEngine {
       })),
       skipInvocation: this._skipInvocation,
       workflowIds: this._registry.list(),
+      executionTree: this._executionTree.toState(),
+      currentInvocationId: this._currentInvocationId ?? undefined,
     };
   }
 
@@ -663,11 +717,32 @@ export class ReflexEngine {
       blackboard: [
         ...this._currentBlackboard.getEntries(),
       ] as BlackboardEntry[],
+      invocationId: this._currentInvocationId ?? undefined,
     };
     const discardedFrames = [
       activeFrameSnapshot,
       ...this._stack.slice(0, targetIdx),
     ];
+
+    // -- Execution tree: invalidate the current active execution + all
+    // discarded frames' invocations and their descendants.
+    const idsToInvalidate: InvocationId[] = [];
+    if (this._currentInvocationId) {
+      idsToInvalidate.push(this._currentInvocationId);
+    }
+    for (const frame of this._stack.slice(0, targetIdx)) {
+      if (frame.invocationId) {
+        idsToInvalidate.push(frame.invocationId);
+      }
+    }
+    if (idsToInvalidate.length > 0) {
+      const invalidated = this._executionTree.invalidate(idsToInvalidate);
+      if (invalidated.length > 0) {
+        this._emit('execution:invalidate', {
+          invalidatedIds: invalidated,
+        } satisfies ExecutionInvalidateEvent);
+      }
+    }
 
     // Restore target frame as active context.
     // Reconstruct blackboard from frozen snapshot (mirrors pop path).
@@ -679,6 +754,9 @@ export class ReflexEngine {
 
     // Keep only frames below the target (the target's ancestors).
     this._stack = this._stack.slice(targetIdx + 1);
+
+    // Restore the target frame's invocation ID as active
+    this._currentInvocationId = targetFrame.invocationId ?? null;
 
     // The target node is an invocation node (frames are only pushed at
     // invocation nodes). By default, skip re-triggering the sub-workflow
@@ -750,18 +828,47 @@ export class ReflexEngine {
     // reads and must reflect the pre-push scope chain.
     const parentReader = this.blackboard();
 
+    // -- Execution tree: prune prior invocations at this node, record new one
+    const returnMap = options?.returnMap ?? [];
+    const pruned = this._executionTree.pruneForReinvoke(
+      this._currentWorkflowId,
+      this._currentNodeId,
+    );
+    if (pruned.length > 0) {
+      this._emit('execution:invalidate', {
+        invalidatedIds: pruned,
+      } satisfies ExecutionInvalidateEvent);
+    }
+    const invocationId = this._executionTree.record(
+      this._currentWorkflowId,
+      this._currentNodeId,
+      subWorkflow.id,
+      {
+        parentInvocationId: this._currentInvocationId ?? undefined,
+        returnMap,
+      },
+    );
+    if (this._currentInvocationId) {
+      this._executionTree.addChildInvocation(
+        this._currentInvocationId,
+        invocationId,
+      );
+    }
+
     // Push current frame onto the stack
     const frame: StackFrame = {
       workflowId: this._currentWorkflowId,
       currentNodeId: this._currentNodeId,
-      returnMap: options?.returnMap ?? [],
+      returnMap,
       blackboard: [
         ...this._currentBlackboard.getEntries(),
       ] as BlackboardEntry[],
+      invocationId: this._currentInvocationId ?? undefined,
     };
     this._stack.unshift(frame);
 
     // Switch active context to sub-workflow
+    this._currentInvocationId = invocationId;
     this._currentWorkflowId = subWorkflow.id;
     this._currentNodeId = subWorkflow.entry;
     this._currentBlackboard = new ScopedBlackboard();
@@ -794,7 +901,10 @@ export class ReflexEngine {
       }
     }
 
-    // Event order: workflow:push → node:enter (mirrors declarative push)
+    // Event order: execution:record → workflow:push → node:enter
+    this._emit('execution:record', {
+      record: this._executionTree.get(invocationId)!,
+    } satisfies ExecutionRecordEvent);
     this._emit('workflow:push', { frame, workflow: subWorkflow });
 
     const entryNode = subWorkflow.nodes[subWorkflow.entry]!;
@@ -833,6 +943,11 @@ export class ReflexEngine {
       );
     }
 
+    // Complete the current execution record before popping
+    if (this._currentInvocationId) {
+      this._executionTree.complete(this._currentInvocationId);
+    }
+
     // Capture child state and pop frame
     const childBlackboard = this._currentBlackboard;
     const frame = this._stack.shift()!;
@@ -866,6 +981,7 @@ export class ReflexEngine {
     this._currentNodeId = frame.currentNodeId;
     this._currentBlackboard = parentBlackboard;
     this._skipInvocation = true;
+    this._currentInvocationId = frame.invocationId ?? null;
 
     const invokingNode = parentWorkflow.nodes[frame.currentNodeId]!;
 
@@ -874,6 +990,33 @@ export class ReflexEngine {
     this._emit('node:enter', { node: invokingNode, workflow: parentWorkflow });
 
     return { status: 'popped', workflow: parentWorkflow, node: invokingNode };
+  }
+
+  // -------------------------------------------------------------------------
+  // Execution Tree Queries
+  // -------------------------------------------------------------------------
+
+  /** All execution records with status 'active' (currently on the stack). */
+  activeExecutions(): ExecutionRecord[] {
+    return this._executionTree.activeRecords();
+  }
+
+  /** Completed child execution records at a specific parent node. */
+  completedExecutionsAt(
+    parentWorkflowId: string,
+    parentNodeId: string,
+  ): ExecutionRecord[] {
+    return this._executionTree.completedAt(parentWorkflowId, parentNodeId);
+  }
+
+  /** All execution records that have been invalidated by rewind or re-invoke. */
+  invalidatedExecutions(): ExecutionRecord[] {
+    return this._executionTree.invalidatedRecords();
+  }
+
+  /** Read-only view of the full execution tree. */
+  executionTree(): ReadonlyMap<InvocationId, ExecutionRecord> {
+    return this._executionTree.allRecords();
   }
 
   // -------------------------------------------------------------------------

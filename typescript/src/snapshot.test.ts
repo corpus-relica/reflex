@@ -118,7 +118,7 @@ describe('snapshot()', () => {
     const sessionId = await engine.init('linear');
     const snap = engine.snapshot();
 
-    expect(snap.version).toBe('1');
+    expect(snap.version).toBe('2');
     expect(snap.sessionId).toBe(sessionId);
     expect(snap.status).toBe('running');
     expect(snap.currentWorkflowId).toBe('linear');
@@ -133,7 +133,7 @@ describe('snapshot()', () => {
   // Version and createdAt format
   // -----------------------------------------------------------------------
 
-  it('has version "1" and valid ISO 8601 createdAt', async () => {
+  it('has version "2" and valid ISO 8601 createdAt', async () => {
     registry.register(linearWorkflow());
     const agent = makeAgent(async () => ({ type: 'complete' }));
     const engine = new ReflexEngine(registry, agent);
@@ -141,7 +141,7 @@ describe('snapshot()', () => {
     await engine.init('linear');
     const snap = engine.snapshot();
 
-    expect(snap.version).toBe('1');
+    expect(snap.version).toBe('2');
     // ISO 8601 roundtrip: Date constructor should parse it
     const parsed = new Date(snap.createdAt);
     expect(parsed.toISOString()).toBe(snap.createdAt);

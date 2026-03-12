@@ -58,6 +58,55 @@ export interface PushWorkflowOptions {
 }
 
 // ---------------------------------------------------------------------------
+// 2.15 Execution Tree (child workflow tracking and pruning)
+// ---------------------------------------------------------------------------
+
+/** A unique identifier for one execution of a sub-workflow. */
+export type InvocationId = string;
+
+/** Lifecycle state of an execution record. */
+export type ExecutionStatus = 'active' | 'completed' | 'invalidated';
+
+/**
+ * One recorded execution of a child workflow, tied to a specific parent
+ * invocation site. Tracks lifecycle from push through completion or
+ * invalidation (via rewind or re-invoke).
+ */
+export interface ExecutionRecord {
+  invocationId: InvocationId;
+  /** The invocation that was active when this child was pushed (null for root-level). */
+  parentInvocationId?: InvocationId;
+  parentWorkflowId: string;
+  parentNodeId: string;
+  childWorkflowId: string;
+  /** The return mapping used for this invocation (audit/provenance). */
+  returnMap?: ReturnMapping[];
+  status: ExecutionStatus;
+  /** Invocation IDs of child executions pushed from within this execution. */
+  childInvocationIds: InvocationId[];
+}
+
+/**
+ * Serializable execution tree state for {@link EngineSnapshot}.
+ */
+export interface ExecutionTreeState {
+  records: ExecutionRecord[];
+}
+
+/** Payload for the `execution:record` event. */
+export interface ExecutionRecordEvent {
+  record: ExecutionRecord;
+}
+
+/**
+ * Payload for the `execution:invalidate` event. Only emitted when at least
+ * one record actually changes status.
+ */
+export interface ExecutionInvalidateEvent {
+  invalidatedIds: InvocationId[];
+}
+
+// ---------------------------------------------------------------------------
 // 2.4 InvocationSpec
 // ---------------------------------------------------------------------------
 
@@ -262,6 +311,9 @@ export interface StackFrame {
   currentNodeId: string;
   returnMap: ReturnMapping[];
   blackboard: BlackboardEntry[];
+  /** The invocation ID of the execution this frame was part of when suspended.
+   *  Optional for backward-compat with v1 snapshots (pre-execution-tree). */
+  invocationId?: InvocationId;
 }
 
 // ---------------------------------------------------------------------------
@@ -394,6 +446,8 @@ export type EngineEvent =
   | 'workflow:push'
   | 'workflow:pop'
   | 'stack:unwind'
+  | 'execution:record'
+  | 'execution:invalidate'
   | 'blackboard:write'
   | 'engine:complete'
   | 'engine:suspend'
@@ -496,6 +550,10 @@ export interface EngineSnapshot {
    * validate registry completeness — not the full definitions.
    */
   workflowIds: string[];
+  /** Execution tree state tracking child workflow invocations. Added in v2. */
+  executionTree?: ExecutionTreeState;
+  /** The invocation ID of the currently active execution. Added in v2. */
+  currentInvocationId?: InvocationId;
 }
 
 // ---------------------------------------------------------------------------
