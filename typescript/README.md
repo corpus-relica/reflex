@@ -179,7 +179,7 @@ while (true) {
 
 ## Status
 
-**v1.3.0** — 407 tests passing. ESM + CJS dual output. Stable public API.
+**v1.4.0** — 488 tests passing. ESM + CJS dual output. Stable public API.
 
 ## Documentation
 
@@ -192,6 +192,8 @@ while (true) {
 MIT — see [LICENSE](../LICENSE)
 
 ## Changelog
+
+**v1.4.0** — Add imperative pushWorkflow/popWorkflow (#112). Add execution tree tracking with pruning (#113).
 
 **v1.3.0** — `stack:unwind` event: `unwindToDepth` now emits a dedicated event with discarded frames, target depth, restored workflow/node, and reinvoke flag. Devtools and listeners can stay in sync with stack mutations. 407 tests.
 
